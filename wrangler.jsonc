@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "advinhia",
+  "compatibility_date": "2026-11-06",
+  // Pure static site: no Worker script needed. Wrangler serves the built
+  // assets directly from ./dist. The TF.js model under /model is just static
+  // files served with the rest of the bundle.
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}

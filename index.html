@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>AdivinhIA — desenhe e deixe a IA adivinhar</title>
+    <meta
+      name="description"
+      content="Jogo de desenho onde uma IA de visão computacional roda localmente no navegador e adivinha seu desenho em tempo real."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-maskable.svg" />
+    <meta name="theme-color" content="#f4f1ea" />
+    <meta property="og:title" content="AdivinhIA" />
+    <meta property="og:description" content="Desenhe e deixe a IA adivinhar — inferência local no seu navegador." />
+    <meta property="og:type" content="website" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand__mark" aria-hidden="true">
+            <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="3" y="3" width="58" height="58" rx="14" fill="#1b1a17"/>
+              <path d="M18 17h21a7 7 0 0 1 7 7v8a7 7 0 0 1-7 7H28l-6 5v-5h-4a7 7 0 0 1-7-7v-8a7 7 0 0 1 7-7Z" fill="#f4f1ea"/>
+              <g transform="rotate(45 31 28)">
+                <rect x="28" y="16" width="6" height="16" rx="1.2" fill="#e8613c"/>
+                <path d="M28 32 L31 36 L34 32 Z" fill="#1b1a17"/>
+              </g>
+            </svg>
+          </span>
+          <h1 class="logo">Adivinh<span class="logo__ai">IA</span></h1>
+        </div>
+        <div class="stats">
+          <div class="stat">
+            <span class="stat__label">Rodada</span>
+            <span class="stat__value" id="round">0/0</span>
+          </div>
+          <div class="stat">
+            <span class="stat__label">Pontos</span>
+            <span class="stat__value" id="score">0</span>
+          </div>
+          <div class="stat stat--best">
+            <span class="stat__label">Recorde</span>
+            <span class="stat__value" id="best">0</span>
+          </div>
+          <div class="stat stat--timer">
+            <span class="stat__label">Tempo</span>
+            <span class="stat__value" id="timer">0s</span>
+          </div>
+        </div>
+      </header>
+
+      <section class="prompt-bar">
+        <div class="prompt-bar__head">
+          <span class="prompt-bar__hint">Desenhe</span>
+          <span class="prompt-bar__word" id="prompt">—</span>
+        </div>
+        <div class="prompt-bar__reveal" id="hint" aria-live="polite"></div>
+        <div class="timer-track" aria-hidden="true">
+          <div class="timer-bar" id="timer-bar"></div>
+        </div>
+      </section>
+
+      <section class="play-area">
+        <div class="board-wrap">
+          <div class="board-frame">
+            <canvas id="board" width="420" height="420" aria-label="Quadro de desenho"></canvas>
+          </div>
+          <div class="board-controls">
+            <button id="clear-btn" class="btn btn--ghost" type="button">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 20h16M6 16l10-10 2 2-10 10H6v-2Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              Limpar
+            </button>
+            <button id="skip-btn" class="btn btn--ghost" type="button">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M5 5l9 7-9 7V5ZM18 5v14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              Pular
+            </button>
+          </div>
+        </div>
+
+        <aside class="ai-panel">
+          <h2 class="ai-panel__title">
+            <span class="ai-dot"></span> A IA está pensando
+          </h2>
+          <ul class="guesses" id="guesses"></ul>
+          <div class="ai-vision">
+            <canvas id="vision" width="28" height="28" aria-label="O que a IA enxerga"></canvas>
+            <span class="ai-vision__label">o que a IA enxerga<br />(entrada 28×28)</span>
+          </div>
+          <p class="ai-panel__note">
+            Nenhuma imagem sai do seu navegador.
+          </p>
+        </aside>
+      </section>
+
+      <footer class="statusbar">
+        <span id="status">Inicializando…</span>
+      </footer>
+    </main>
+
+    <div class="overlay" id="overlay">
+      <div class="overlay__card">
+        <span class="overlay__mark" aria-hidden="true">
+          <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="3" y="3" width="58" height="58" rx="14" fill="#1b1a17"/>
+            <path d="M18 17h21a7 7 0 0 1 7 7v8a7 7 0 0 1-7 7H28l-6 5v-5h-4a7 7 0 0 1-7-7v-8a7 7 0 0 1 7-7Z" fill="#f4f1ea"/>
+            <g transform="rotate(45 31 28)">
+              <rect x="28" y="16" width="6" height="16" rx="1.2" fill="#e8613c"/>
+              <path d="M28 32 L31 36 L34 32 Z" fill="#1b1a17"/>
+            </g>
+          </svg>
+        </span>
+        <h2 id="overlay-title">Advinhia</h2>
+        <p id="overlay-text"></p>
+        <button id="overlay-btn" class="btn btn--primary" type="button">Começar</button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

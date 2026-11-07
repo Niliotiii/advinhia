@@ -1,0 +1,11 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- full-bleed ink background for maskable safe zone -->
+  <rect width="512" height="512" fill="#1b1a17"/>
+  <!-- paper thought bubble, centered within the 80% safe area -->
+  <path d="M150 150h168a56 56 0 0 1 56 56v64a56 56 0 0 1-56 56h-88l-48 40v-40h-32a56 56 0 0 1-56-56v-64a56 56 0 0 1 56-56Z" fill="#f4f1ea"/>
+  <!-- pencil -->
+  <g transform="rotate(45 248 224)">
+    <rect x="224" y="128" width="48" height="128" rx="10" fill="#e8613c"/>
+    <path d="M224 256 L248 288 L272 256 Z" fill="#1b1a17"/>
+  </g>
+</svg>
