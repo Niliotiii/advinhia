@@ -53,6 +53,16 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(req.url);
   const sameOrigin = url.origin === self.location.origin;
 
+  // Never touch multiplayer routes. /room/:code may be a WebSocket upgrade
+  // (which must reach the Worker/Durable Object directly) and the /room page
+  // requires a live connection — caching it would break online play.
+  if (sameOrigin && url.pathname.startsWith("/room")) {
+    return; // fall through to the network
+  }
+  if (req.headers.get("Upgrade") === "websocket") {
+    return;
+  }
+
   // Navigation requests: network-first, so a fresh deploy's HTML (which points
   // at new hashed assets) is always preferred when online. We refresh the
   // cached shell on every successful load, and fall back to it only offline.

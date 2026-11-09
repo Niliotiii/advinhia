@@ -1,12 +1,19 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "advinhia",
+  "main": "src/worker/index.ts",
   "compatibility_date": "2026-11-06",
-  // Pure static site: no Worker script needed. Wrangler serves the built
-  // assets directly from ./dist. The TF.js model under /model is just static
-  // files served with the rest of the bundle.
+  // Static assets (SPA + model + PWA files) are served through the Worker via
+  // the ASSETS binding. The Worker intercepts /room/:id for WebSocket upgrades
+  // and defers everything else to assets.
   "assets": {
     "directory": "./dist",
+    "binding": "ASSETS",
     "not_found_handling": "single-page-application"
-  }
+  },
+  // One Durable Object per room coordinates the real-time channel.
+  "durable_objects": {
+    "bindings": [{ "name": "GAME_ROOM", "class_name": "GameRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameRoom"] }]
 }

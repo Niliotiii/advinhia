@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "dev:worker": "wrangler dev",
+    "build": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json && vite build",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy"
   },

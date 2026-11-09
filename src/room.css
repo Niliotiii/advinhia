@@ -1,0 +1,238 @@
+/* Multiplayer room styles — reuse the paper/ink tokens from style.css. */
+
+.brand__link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.topbar__tag {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  color: var(--accent);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  padding: 4px 12px;
+}
+
+/* ---- Lobby ---- */
+.lobby {
+  background: var(--card);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 28px;
+  max-width: 460px;
+  margin: 24px auto 0;
+  width: 100%;
+}
+
+.lobby__title {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  margin: 0 0 6px;
+}
+
+.lobby__sub {
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin: 0 0 20px;
+}
+
+.lobby__form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field__label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  color: var(--ink-faint);
+}
+
+.field__input {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  padding: 10px 14px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--paper-2);
+  color: var(--ink);
+}
+
+.field__input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.lobby__actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.lobby__actions .btn {
+  flex: 1;
+}
+
+.lobby__error {
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 2px 0 0;
+  min-height: 1em;
+}
+
+/* ---- Room ---- */
+.room__bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--card);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 12px 18px;
+}
+
+.room__code {
+  font-size: 0.95rem;
+}
+
+.room__code strong {
+  font-family: var(--font-display);
+  letter-spacing: 0.1em;
+}
+
+.room__conn {
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+  margin-left: auto;
+}
+
+.btn--sm {
+  padding: 7px 14px;
+  font-size: 0.85rem;
+}
+
+.room__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 18px;
+  margin-top: 18px;
+  align-items: start;
+}
+
+.side {
+  background: var(--paper-2);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 320px;
+}
+
+.side__title {
+  margin: 0;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-soft);
+  font-weight: 700;
+  padding-bottom: 8px;
+  border-bottom: 1.5px dashed var(--line);
+}
+
+.players {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.player {
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: var(--paper);
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  padding: 3px 11px;
+}
+
+.player--self {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.chat-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  overflow-y: auto;
+  max-height: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.chat-msg {
+  font-size: 0.85rem;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
+.chat-msg__name {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.chat-msg--self .chat-msg__name {
+  color: var(--accent);
+}
+
+.chat-msg--system {
+  font-style: italic;
+  color: var(--ink-faint);
+  font-size: 0.78rem;
+}
+
+.chat-form {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-form .field__input {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 780px) {
+  .room__grid {
+    grid-template-columns: 1fr;
+  }
+  .side {
+    min-height: 0;
+  }
+}

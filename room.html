@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>AdivinhIA — Sala multiplayer</title>
+    <meta name="description" content="Desenho compartilhado em tempo real no AdivinhIA." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="theme-color" content="#f4f1ea" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div class="brand">
+          <a class="brand__link" href="/" aria-label="Voltar ao single-player">
+            <span class="brand__mark" aria-hidden="true">
+              <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="3" y="3" width="58" height="58" rx="14" fill="#1b1a17"/>
+                <path d="M18 17h21a7 7 0 0 1 7 7v8a7 7 0 0 1-7 7H28l-6 5v-5h-4a7 7 0 0 1-7-7v-8a7 7 0 0 1 7-7Z" fill="#f4f1ea"/>
+                <g transform="rotate(45 31 28)">
+                  <rect x="28" y="16" width="6" height="16" rx="1.2" fill="#e8613c"/>
+                  <path d="M28 32 L31 36 L34 32 Z" fill="#1b1a17"/>
+                </g>
+              </svg>
+            </span>
+            <h1 class="logo">Adivinh<span class="logo__ai">IA</span></h1>
+          </a>
+        </div>
+        <span class="topbar__tag">multiplayer</span>
+      </header>
+
+      <!-- Lobby -->
+      <section id="lobby" class="lobby">
+        <h2 class="lobby__title">Jogar com amigos</h2>
+        <p class="lobby__sub">Desenho compartilhado em tempo real. Crie uma sala ou entre com um código.</p>
+        <div class="lobby__form">
+          <label class="field">
+            <span class="field__label">Seu nome</span>
+            <input id="name-input" class="field__input" type="text" maxlength="24" placeholder="ex.: Dani" autocomplete="nickname" />
+          </label>
+          <label class="field">
+            <span class="field__label">Código da sala</span>
+            <input id="code-input" class="field__input" type="text" maxlength="8" placeholder="ex.: AB12" autocapitalize="characters" />
+          </label>
+          <div class="lobby__actions">
+            <button id="join-btn" class="btn btn--ghost" type="button">Entrar</button>
+            <button id="create-btn" class="btn btn--primary" type="button">Criar sala</button>
+          </div>
+          <p id="lobby-error" class="lobby__error" role="alert"></p>
+        </div>
+      </section>
+
+      <!-- Room -->
+      <section id="room" class="room" hidden>
+        <div class="room__bar">
+          <span class="room__code">Sala <strong id="room-code">—</strong></span>
+          <span id="conn-state" class="room__conn">—</span>
+          <button id="leave-btn" class="btn btn--ghost btn--sm" type="button">Sair</button>
+        </div>
+
+        <div class="room__grid">
+          <div class="board-wrap">
+            <div class="board-frame">
+              <canvas id="board" width="420" height="420" aria-label="Quadro compartilhado"></canvas>
+            </div>
+            <div class="board-controls">
+              <button id="clear-btn" class="btn btn--ghost" type="button">Limpar</button>
+            </div>
+          </div>
+
+          <aside class="side">
+            <h3 class="side__title">Jogadores</h3>
+            <ul id="players" class="players"></ul>
+            <h3 class="side__title">Chat</h3>
+            <ul id="chat-log" class="chat-log"></ul>
+            <form id="chat-form" class="chat-form">
+              <input id="chat-input" class="field__input" type="text" maxlength="200" placeholder="Mensagem…" autocomplete="off" />
+              <button class="btn btn--ghost btn--sm" type="submit">Enviar</button>
+            </form>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/room.ts"></script>
+  </body>
+</html>

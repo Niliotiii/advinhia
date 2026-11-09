@@ -11,6 +11,7 @@ export class DrawingBoard {
   private lastY = 0;
   private _dirty = false;
   private onStrokeEnd?: () => void;
+  private onSegment?: (nx: number, ny: number, isStart: boolean) => void;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -32,6 +33,16 @@ export class DrawingBoard {
     this.onStrokeEnd = cb;
   }
 
+  /**
+   * Register a callback fired for each local drawing step with NORMALIZED
+   * coordinates (0..1). `isStart` marks the first point of a new stroke (pen
+   * down), so remote peers know not to connect it to the previous point.
+   * Used to stream the drawing to other players.
+   */
+  setOnSegment(cb: (nx: number, ny: number, isStart: boolean) => void): void {
+    this.onSegment = cb;
+  }
+
   /** True if anything has been drawn since the last clear. */
   get dirty(): boolean {
     return this._dirty;
@@ -45,6 +56,7 @@ export class DrawingBoard {
     this.ctx.fillStyle = "#fff";
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     this._dirty = false;
+    this.remoteLast?.clear();
   }
 
   private pos(e: MouseEvent | Touch): [number, number] {
@@ -64,6 +76,7 @@ export class DrawingBoard {
     this.ctx.fillStyle = "#111";
     this.ctx.fill();
     this._dirty = true;
+    this.onSegment?.(x / this.canvas.width, y / this.canvas.height, true);
   }
 
   private move(x: number, y: number): void {
@@ -75,6 +88,40 @@ export class DrawingBoard {
     this.lastX = x;
     this.lastY = y;
     this._dirty = true;
+    this.onSegment?.(x / this.canvas.width, y / this.canvas.height, false);
+  }
+
+  // Remote pen position per peer id (normalized → pixels tracked here).
+  private remoteLast = new Map<string, { x: number; y: number }>();
+
+  /**
+   * Render a drawing step received from another player. Coordinates are
+   * normalized (0..1). `isStart` begins a new stroke (pen down).
+   */
+  drawRemoteSegment(peerId: string, nx: number, ny: number, isStart: boolean): void {
+    const x = nx * this.canvas.width;
+    const y = ny * this.canvas.height;
+    if (isStart || !this.remoteLast.has(peerId)) {
+      this.ctx.beginPath();
+      this.ctx.arc(x, y, this.ctx.lineWidth / 2, 0, Math.PI * 2);
+      this.ctx.fillStyle = "#111";
+      this.ctx.fill();
+    } else {
+      const prev = this.remoteLast.get(peerId)!;
+      this.ctx.beginPath();
+      this.ctx.moveTo(prev.x, prev.y);
+      this.ctx.lineTo(x, y);
+      this.ctx.strokeStyle = "#111";
+      this.ctx.stroke();
+    }
+    this.remoteLast.set(peerId, { x, y });
+    this._dirty = true;
+  }
+
+  /** Forget a remote peer's pen state (e.g. on clear or disconnect). */
+  resetRemote(peerId?: string): void {
+    if (peerId) this.remoteLast.delete(peerId);
+    else this.remoteLast.clear();
   }
 
   private end(): void {
