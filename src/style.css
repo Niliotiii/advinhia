@@ -418,17 +418,6 @@ body {
   gap: 6px;
 }
 
-.statusbar__link {
-  color: var(--accent);
-  font-weight: 700;
-  text-decoration: none;
-  border-bottom: 1.5px solid transparent;
-}
-
-.statusbar__link:hover {
-  border-bottom-color: var(--accent);
-}
-
 /* ---- Buttons ---- */
 .btn {
   border: 2px solid var(--ink);
@@ -564,6 +553,235 @@ body {
   font-weight: 700;
 }
 
+/* ---- View switching (menu <-> game) ---- */
+[hidden] {
+  display: none !important;
+}
+
+.app[data-view="menu"] .game-only,
+.app[data-view="game"] .menu-only {
+  display: none !important;
+}
+
+/* ---- Start menu ---- */
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  width: 100%;
+}
+
+.menu__hero {
+  padding-top: 8px;
+}
+
+.menu__title {
+  margin: 0 0 10px;
+  font-family: var(--font-display);
+  font-size: clamp(1.9rem, 5vw, 2.8rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.menu__sub {
+  margin: 0;
+  max-width: 56ch;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  font-size: 1rem;
+}
+
+.menu__sub strong {
+  color: var(--ink);
+}
+
+.menu__modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.mode {
+  background: var(--card);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mode__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mode__tag {
+  font-family: var(--font-body);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-weight: 700;
+  color: var(--accent);
+  border: 1.5px solid var(--accent);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.mode__text {
+  margin: 0;
+  flex: 1;
+  color: var(--ink-soft);
+  line-height: 1.55;
+  font-size: 0.94rem;
+}
+
+.mode .btn {
+  align-self: stretch;
+  text-decoration: none;
+}
+
+.mode .btn--ghost {
+  flex: none;
+}
+
+.mode .btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.menu__settings-btn {
+  align-self: flex-start;
+  flex: none;
+}
+
+/* ---- Settings panel ---- */
+.settings {
+  background: var(--paper-2);
+  border: 2px solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 22px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 24px;
+}
+
+.opt {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.opt--text {
+  grid-column: 1 / -1;
+}
+
+.opt__label {
+  padding: 0;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  color: var(--ink-faint);
+}
+
+.opt__input {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  padding: 10px 14px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--ink);
+  max-width: 320px;
+}
+
+.opt__input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.opt__help {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--ink-faint);
+}
+
+/* Segmented control built from real radio inputs (keyboard + screen reader friendly) */
+.seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.seg__item {
+  position: relative;
+}
+
+.seg__item input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.seg__item span {
+  display: inline-block;
+  padding: 8px 16px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  box-shadow: 2px 2px 0 var(--ink);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.seg__item input:checked + span {
+  background: var(--ink);
+  color: #fff;
+}
+
+.seg__item input:focus-visible + span {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.settings__foot {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 14px;
+  border-top: 1.5px dashed var(--line);
+}
+
+.settings__foot .btn {
+  flex: none;
+}
+
+.overlay__secondary {
+  margin-top: 10px;
+  flex: none;
+  width: 100%;
+}
+
 /* ---- Responsive ---- */
 @media (max-width: 780px) {
   .play-area {
@@ -577,6 +795,14 @@ body {
   }
   .prompt-bar__word {
     font-size: 1.8rem;
+  }
+  .menu__modes,
+  .settings {
+    grid-template-columns: 1fr;
+  }
+  .settings__foot {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 

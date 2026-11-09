@@ -26,7 +26,7 @@
     <script defer src="https://umami.niliotiii.com.br/script.js" data-website-id="06896514-9229-4dbd-8fc0-adbf44fdc695"></script>
   </head>
   <body>
-    <main class="app">
+    <main class="app" id="app" data-view="menu">
       <header class="topbar">
         <div class="brand">
           <span class="brand__mark" aria-hidden="true">
@@ -41,7 +41,7 @@
           </span>
           <h1 class="logo">Adivinh<span class="logo__ai">IA</span></h1>
         </div>
-        <div class="stats">
+        <div class="stats game-only">
           <div class="stat">
             <span class="stat__label">Rodada</span>
             <span class="stat__value" id="round">0/0</span>
@@ -61,7 +61,112 @@
         </div>
       </header>
 
-      <section class="prompt-bar">
+      <!-- Start menu: choose a mode and adjust settings -->
+      <section class="menu menu-only" id="menu">
+        <div class="menu__hero">
+          <h2 class="menu__title">Desenhe. A IA adivinha.</h2>
+          <p class="menu__sub">
+            Uma IA de visão computacional roda <strong>no seu navegador</strong> e tenta
+            adivinhar o que você desenha, em tempo real. Nenhuma imagem sai do seu navegador.
+          </p>
+        </div>
+
+        <div class="menu__modes">
+          <article class="mode">
+            <h3 class="mode__title">Solo contra a IA</h3>
+            <p class="mode__text">
+              Desenhe o conceito sorteado antes que o tempo acabe. Quanto mais rápido a IA
+              acertar, mais pontos.
+            </p>
+            <button id="play-solo-btn" class="btn btn--primary" type="button" disabled>
+              Carregando modelo…
+            </button>
+          </article>
+
+          <article class="mode">
+            <h3 class="mode__title">Multiplayer <span class="mode__tag">beta</span></h3>
+            <p class="mode__text">
+              Entre numa sala com amigos: desenho compartilhado em tempo real e chat.
+            </p>
+            <a id="play-multi-btn" class="btn btn--ghost" href="/room">Entrar numa sala</a>
+          </article>
+        </div>
+
+        <button
+          id="settings-toggle"
+          class="btn btn--ghost menu__settings-btn"
+          type="button"
+          aria-expanded="false"
+          aria-controls="settings"
+        >
+          <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Configurações
+        </button>
+
+        <section id="settings" class="settings" hidden aria-label="Configurações">
+          <label class="opt opt--text">
+            <span class="opt__label">Seu nome</span>
+            <input id="name-setting" class="opt__input" type="text" maxlength="24" placeholder="usado no multiplayer" autocomplete="nickname" />
+          </label>
+
+          <fieldset class="opt">
+            <legend class="opt__label">Rodadas</legend>
+            <div class="seg">
+              <label class="seg__item"><input type="radio" name="rounds" value="3" /><span>3</span></label>
+              <label class="seg__item"><input type="radio" name="rounds" value="6" /><span>6</span></label>
+              <label class="seg__item"><input type="radio" name="rounds" value="10" /><span>10</span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="opt">
+            <legend class="opt__label">Tempo por rodada</legend>
+            <div class="seg">
+              <label class="seg__item"><input type="radio" name="seconds" value="15" /><span>15s</span></label>
+              <label class="seg__item"><input type="radio" name="seconds" value="20" /><span>20s</span></label>
+              <label class="seg__item"><input type="radio" name="seconds" value="30" /><span>30s</span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="opt">
+            <legend class="opt__label">Dificuldade da IA</legend>
+            <div class="seg">
+              <label class="seg__item"><input type="radio" name="difficulty" value="easy" /><span>Fácil</span></label>
+              <label class="seg__item"><input type="radio" name="difficulty" value="normal" /><span>Normal</span></label>
+              <label class="seg__item"><input type="radio" name="difficulty" value="hard" /><span>Difícil</span></label>
+            </div>
+            <p class="opt__help">Quão confiante a IA precisa estar para acertar. No fácil ela acerta com menos certeza.</p>
+          </fieldset>
+
+          <fieldset class="opt">
+            <legend class="opt__label">Dicas</legend>
+            <div class="seg">
+              <label class="seg__item"><input type="radio" name="hints" value="true" /><span>Ligadas</span></label>
+              <label class="seg__item"><input type="radio" name="hints" value="false" /><span>Desligadas</span></label>
+            </div>
+            <p class="opt__help">Revela letras do nome conforme o tempo passa.</p>
+          </fieldset>
+
+          <fieldset class="opt">
+            <legend class="opt__label">Pincel</legend>
+            <div class="seg">
+              <label class="seg__item"><input type="radio" name="brush" value="thin" /><span>Fino</span></label>
+              <label class="seg__item"><input type="radio" name="brush" value="medium" /><span>Médio</span></label>
+              <label class="seg__item"><input type="radio" name="brush" value="thick" /><span>Grosso</span></label>
+            </div>
+          </fieldset>
+
+          <div class="settings__foot">
+            <p class="opt__help">
+              O recorde é guardado separadamente para cada combinação de rodadas, tempo e dificuldade.
+            </p>
+            <button id="settings-reset" class="btn btn--ghost btn--sm" type="button">Restaurar padrões</button>
+          </div>
+        </section>
+      </section>
+
+      <section class="prompt-bar game-only">
         <div class="prompt-bar__head">
           <span class="prompt-bar__hint">Desenhe</span>
           <span class="prompt-bar__word" id="prompt">—</span>
@@ -72,7 +177,7 @@
         </div>
       </section>
 
-      <section class="play-area">
+      <section class="play-area game-only">
         <div class="board-wrap">
           <div class="board-frame">
             <canvas id="board" width="420" height="420" aria-label="Quadro de desenho"></canvas>
@@ -89,6 +194,12 @@
                 <path d="M5 5l9 7-9 7V5ZM18 5v14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
               Pular
+            </button>
+            <button id="menu-btn" class="btn btn--ghost" type="button">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M19 12H5M11 6l-6 6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              Menu
             </button>
           </div>
         </div>
@@ -109,8 +220,7 @@
       </section>
 
       <footer class="statusbar">
-        <span id="status">Inicializando…</span>
-        <a class="statusbar__link" href="/room">Jogar multiplayer (beta)</a>
+        <span id="status"></span>
       </footer>
     </main>
 
@@ -129,6 +239,9 @@
         <h2 id="overlay-title">Advinhia</h2>
         <p id="overlay-text"></p>
         <button id="overlay-btn" class="btn btn--primary" type="button">Começar</button>
+        <button id="overlay-menu-btn" class="btn btn--ghost overlay__secondary" type="button" hidden>
+          Voltar ao menu
+        </button>
       </div>
     </div>
 

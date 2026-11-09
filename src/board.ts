@@ -43,6 +43,11 @@ export class DrawingBoard {
     this.onSegment = cb;
   }
 
+  /** Set the pen width in canvas pixels (applies to local and remote strokes). */
+  setBrushSize(px: number): void {
+    this.ctx.lineWidth = px;
+  }
+
   /** True if anything has been drawn since the last clear. */
   get dirty(): boolean {
     return this._dirty;

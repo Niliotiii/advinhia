@@ -2,6 +2,15 @@ import "./style.css";
 import { SketchRecognizer, type Prediction } from "./recognizer";
 import { DrawingBoard } from "./board";
 import { Game, type GameSnapshot, type RoundResult } from "./game";
+import {
+  BRUSH_PX,
+  DEFAULT_SETTINGS,
+  loadName,
+  loadSettings,
+  saveName,
+  saveSettings,
+  type Settings,
+} from "./settings";
 
 // ---- DOM references ----
 const $ = <T extends HTMLElement>(sel: string): T => {
@@ -10,6 +19,7 @@ const $ = <T extends HTMLElement>(sel: string): T => {
   return el;
 };
 
+const appEl = $("#app");
 const canvas = $<HTMLCanvasElement>("#board");
 const promptEl = $("#prompt");
 const hintEl = $("#hint");
@@ -25,13 +35,21 @@ const overlay = $("#overlay");
 const overlayTitle = $("#overlay-title");
 const overlayText = $("#overlay-text");
 const overlayBtn = $<HTMLButtonElement>("#overlay-btn");
+const overlayMenuBtn = $<HTMLButtonElement>("#overlay-menu-btn");
 const clearBtn = $<HTMLButtonElement>("#clear-btn");
 const skipBtn = $<HTMLButtonElement>("#skip-btn");
+const menuBtn = $<HTMLButtonElement>("#menu-btn");
+const playSoloBtn = $<HTMLButtonElement>("#play-solo-btn");
+const settingsToggle = $<HTMLButtonElement>("#settings-toggle");
+const settingsPanel = $("#settings");
+const settingsReset = $<HTMLButtonElement>("#settings-reset");
+const nameSetting = $<HTMLInputElement>("#name-setting");
 
 // ---- Core objects ----
 const recognizer = new SketchRecognizer();
 const board = new DrawingBoard(canvas);
 const game = new Game();
+let settings: Settings = loadSettings();
 
 // Tracks the current round's prompt so we can detect when a new round begins.
 let lastPrompt: string | null = null;
@@ -157,6 +175,7 @@ function showRoundResult(r: RoundResult): void {
     overlayText.innerHTML = `Era <strong>${r.prompt.pt}</strong>. A IA não conseguiu adivinhar dessa vez.`;
   }
   overlayBtn.textContent = "Próxima rodada";
+  overlayMenuBtn.hidden = true;
   overlayBtn.onclick = () => {
     hideOverlay();
     game.advance();
@@ -174,6 +193,8 @@ function showGameOver(s: GameSnapshot): void {
     overlayText.innerHTML = `Pontuação final: <strong>${s.score}</strong> pontos.<br />Seu recorde: <strong>${s.bestScore}</strong>.`;
   }
   overlayBtn.textContent = "Jogar de novo";
+  overlayMenuBtn.hidden = false;
+  overlayMenuBtn.onclick = goToMenu;
   overlayBtn.onclick = () => {
     hideOverlay();
     lastPrompt = null;
@@ -223,35 +244,112 @@ clearBtn.addEventListener("click", () => {
   renderVision();
 });
 skipBtn.addEventListener("click", () => game.skip());
+menuBtn.addEventListener("click", goToMenu);
+
+// ---- Views: menu <-> game ----
+function setView(view: "menu" | "game"): void {
+  appEl.dataset.view = view;
+  window.scrollTo(0, 0);
+}
+
+function startSolo(): void {
+  if (!recognizer.isReady()) return;
+  game.configure(settings);
+  board.setBrushSize(BRUSH_PX[settings.brush]);
+  board.clear();
+  hideOverlay();
+  lastPrompt = null;
+  setView("game");
+  game.start();
+}
+
+function goToMenu(): void {
+  stopInferenceLoop();
+  game.abort();
+  hideOverlay();
+  lastPrompt = null;
+  setView("menu");
+}
+
+playSoloBtn.addEventListener("click", startSolo);
+
+// ---- Settings ----
+function syncSettingsForm(): void {
+  const current: Record<string, string> = {
+    rounds: String(settings.rounds),
+    seconds: String(settings.seconds),
+    difficulty: settings.difficulty,
+    hints: String(settings.hints),
+    brush: settings.brush,
+  };
+  for (const [name, value] of Object.entries(current)) {
+    const input = settingsPanel.querySelector<HTMLInputElement>(
+      `input[name="${name}"][value="${value}"]`,
+    );
+    if (input) input.checked = true;
+  }
+  nameSetting.value = loadName();
+}
+
+settingsPanel.addEventListener("change", (e) => {
+  const input = e.target as HTMLInputElement;
+  if (input.type !== "radio") return;
+  // Values come from our own radio buttons, so the casts are safe.
+  switch (input.name) {
+    case "rounds":
+      settings.rounds = Number(input.value) as Settings["rounds"];
+      break;
+    case "seconds":
+      settings.seconds = Number(input.value) as Settings["seconds"];
+      break;
+    case "difficulty":
+      settings.difficulty = input.value as Settings["difficulty"];
+      break;
+    case "hints":
+      settings.hints = input.value === "true";
+      break;
+    case "brush":
+      settings.brush = input.value as Settings["brush"];
+      break;
+  }
+  saveSettings(settings);
+});
+
+nameSetting.addEventListener("input", () => saveName(nameSetting.value));
+
+settingsReset.addEventListener("click", () => {
+  settings = { ...DEFAULT_SETTINGS };
+  saveSettings(settings);
+  syncSettingsForm();
+});
+
+settingsToggle.addEventListener("click", () => {
+  const open = settingsPanel.hidden;
+  settingsPanel.hidden = !open;
+  settingsToggle.setAttribute("aria-expanded", String(open));
+});
+
+syncSettingsForm();
 
 // ---- Boot ----
+// The menu is the first screen. The model loads in the background while the
+// player browses it; solo mode unlocks as soon as inference is ready.
 async function boot(): Promise<void> {
-  statusEl.textContent = "Carregando modelo de IA (local)…";
-  overlayTitle.innerHTML = 'Adivinh<span class="logo__ai">IA</span>';
-  overlayText.innerHTML =
-    "Desenhe o conceito mostrado. Uma IA de visão computacional roda <strong>localmente no seu navegador</strong> e tenta adivinhar em tempo real. Quanto mais rápido ela acertar, mais pontos você faz!";
-  overlayBtn.textContent = "Carregando…";
-  overlayBtn.disabled = true;
-  showOverlay();
+  setView("menu");
+  playSoloBtn.disabled = true;
+  playSoloBtn.textContent = "Carregando modelo…";
 
   try {
     await recognizer.load();
     statusEl.textContent = "";
-    renderSnapshot(game.snapshot());
-    overlayBtn.textContent = "Começar a jogar";
-    overlayBtn.disabled = false;
-    overlayBtn.onclick = () => {
-      hideOverlay();
-      game.start();
-    };
+    playSoloBtn.disabled = false;
+    playSoloBtn.textContent = "Jogar solo";
   } catch (err) {
     console.error(err);
-    statusEl.textContent = "Falha ao carregar o modelo.";
-    overlayText.textContent =
-      "Não foi possível carregar o modelo de IA. Recarregue a página.";
-    overlayBtn.textContent = "Recarregar";
-    overlayBtn.disabled = false;
-    overlayBtn.onclick = () => location.reload();
+    statusEl.textContent = "Não foi possível carregar o modelo de IA.";
+    playSoloBtn.disabled = false;
+    playSoloBtn.textContent = "Tentar de novo";
+    playSoloBtn.onclick = () => location.reload();
   }
 }
 

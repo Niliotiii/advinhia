@@ -1,4 +1,10 @@
 import { PROMPTS, type Prompt } from "./prompts";
+import {
+  CONFIDENCE_BY_DIFFICULTY,
+  DEFAULT_SETTINGS,
+  isDefaultSettings,
+  type Settings,
+} from "./settings";
 
 export type GamePhase = "idle" | "playing" | "roundWon" | "roundLost" | "gameOver";
 
@@ -19,21 +25,21 @@ export interface GameSnapshot {
   roundDuration: number;
   /** Partially-revealed version of the prompt word, e.g. "m _ ç _". */
   hint: string;
-  /** Best score ever (persisted in localStorage). */
+  /** Best score for the current settings (persisted in localStorage). */
   bestScore: number;
   /** True at game over if this run beat the stored best score. */
   isNewBest: boolean;
 }
 
-const ROUND_DURATION = 20; // seconds per round
-const TOTAL_ROUNDS = 6;
-const BEST_SCORE_KEY = "adivinhia.bestScore";
+// Pre-settings versions stored a single best score; it corresponds to the
+// default configuration, so we keep honoring it for that configuration.
+const LEGACY_BEST_KEY = "adivinhia.bestScore";
 // The AI only counts as having "guessed" the prompt when it is the #1 guess
 // with high confidence AND holds that guess for several consecutive
 // inferences. Requiring stability (not a single lucky frame) and real
 // confidence keeps the round from ending the instant the sketch is barely
 // readable — the player gets a moment of tension before the AI "locks in".
-const CONFIDENCE_THRESHOLD = 0.65;
+// The confidence level itself comes from the difficulty setting.
 const REQUIRED_STREAK = 3; // consecutive confident hits (~3 * 250ms = 750ms)
 
 /**
@@ -42,17 +48,24 @@ const REQUIRED_STREAK = 3; // consecutive confident hits (~3 * 250ms = 750ms)
  *  - The AI continuously guesses. If its top guess matches the prompt with
  *    enough confidence, the round is won.
  *  - Faster recognition => more points (scaled by remaining time).
+ * Rounds, round length, AI confidence and hints come from Settings.
  */
 export class Game {
+  private totalRounds: number = DEFAULT_SETTINGS.rounds;
+  private roundDuration: number = DEFAULT_SETTINGS.seconds;
+  private confidenceThreshold = CONFIDENCE_BY_DIFFICULTY[DEFAULT_SETTINGS.difficulty];
+  private hintsEnabled = DEFAULT_SETTINGS.hints;
+  private bestKey = bestKeyFor(DEFAULT_SETTINGS);
+
   private phase: GamePhase = "idle";
   private round = 0;
   private score = 0;
   private prompt: Prompt | null = null;
-  private timeLeft = ROUND_DURATION;
+  private timeLeft: number = DEFAULT_SETTINGS.seconds;
   private timerId: number | null = null;
   private deck: Prompt[] = [];
   private streak = 0; // consecutive confident correct guesses this round
-  private bestScore = loadBestScore();
+  private bestScore = loadBestScore(this.bestKey, true);
   private isNewBest = false;
   private revealOrder: number[] = []; // randomized letter-reveal order for hints
 
@@ -66,15 +79,39 @@ export class Game {
     this.onRoundEnd = cb;
   }
 
+  /** Apply player settings. Call before start(); takes effect on the next game. */
+  configure(s: Settings): void {
+    this.totalRounds = s.rounds;
+    this.roundDuration = s.seconds;
+    this.confidenceThreshold = CONFIDENCE_BY_DIFFICULTY[s.difficulty];
+    this.hintsEnabled = s.hints;
+    this.bestKey = bestKeyFor(s);
+    this.bestScore = loadBestScore(this.bestKey, isDefaultSettings(s));
+    this.isNewBest = false;
+    if (this.phase === "idle") this.timeLeft = this.roundDuration;
+  }
+
+  /** Abandon the current game (e.g. back to the menu) without recording a score. */
+  abort(): void {
+    this.stopTimer();
+    this.phase = "idle";
+    this.round = 0;
+    this.score = 0;
+    this.prompt = null;
+    this.streak = 0;
+    this.isNewBest = false;
+    this.timeLeft = this.roundDuration;
+  }
+
   snapshot(): GameSnapshot {
     return {
       phase: this.phase,
       round: this.round,
-      totalRounds: TOTAL_ROUNDS,
+      totalRounds: this.totalRounds,
       score: this.score,
       prompt: this.prompt,
       timeLeft: this.timeLeft,
-      roundDuration: ROUND_DURATION,
+      roundDuration: this.roundDuration,
       hint: this.buildHint(),
       bestScore: this.bestScore,
       isNewBest: this.isNewBest,
@@ -86,16 +123,16 @@ export class Game {
    * uncovered as the round clock runs down: nothing at the start, and up to
    * ~60% of the letters by the time the timer is nearly out. Spaces and
    * hyphens are always shown; the reveal order is randomized per round so it
-   * isn't always left-to-right.
+   * isn't always left-to-right. Returns "" when hints are turned off.
    */
   private buildHint(): string {
-    if (this.phase !== "playing" || !this.prompt) return "";
+    if (!this.hintsEnabled || this.phase !== "playing" || !this.prompt) return "";
     const word = this.prompt.pt;
     const letterIdx: number[] = [];
     for (let i = 0; i < word.length; i++) {
       if (/[a-zà-ÿ]/i.test(word[i])) letterIdx.push(i);
     }
-    const elapsed = 1 - this.timeLeft / ROUND_DURATION; // 0 → 1
+    const elapsed = 1 - this.timeLeft / this.roundDuration; // 0 → 1
     const maxReveal = Math.floor(letterIdx.length * 0.6);
     const revealCount = Math.min(maxReveal, Math.floor(elapsed * (maxReveal + 1)));
 
@@ -123,18 +160,18 @@ export class Game {
     this.score = 0;
     this.round = 0;
     this.isNewBest = false;
-    this.deck = shuffle(PROMPTS).slice(0, TOTAL_ROUNDS);
+    this.deck = shuffle(PROMPTS).slice(0, this.totalRounds);
     this.nextRound();
   }
 
   private nextRound(): void {
-    if (this.round >= TOTAL_ROUNDS) {
+    if (this.round >= this.totalRounds) {
       this.endGame();
       return;
     }
     this.prompt = this.deck[this.round];
     this.round += 1;
-    this.timeLeft = ROUND_DURATION;
+    this.timeLeft = this.roundDuration;
     this.streak = 0;
     this.phase = "playing";
     // Randomize which letters get revealed first for the hint.
@@ -180,7 +217,7 @@ export class Game {
     const top = guesses[0];
     const confident =
       top?.label === this.prompt.label &&
-      top.probability >= CONFIDENCE_THRESHOLD;
+      top.probability >= this.confidenceThreshold;
 
     if (confident) {
       this.streak += 1;
@@ -198,7 +235,7 @@ export class Game {
     this.stopTimer();
     this.phase = "roundWon";
     // Points scale with speed: full time left => more points.
-    const points = 100 + Math.round((this.timeLeft / ROUND_DURATION) * 400);
+    const points = 100 + Math.round((this.timeLeft / this.roundDuration) * 400);
     this.score += points;
     this.onRoundEnd?.({
       prompt: this.prompt!,
@@ -242,7 +279,7 @@ export class Game {
     if (this.score > this.bestScore) {
       this.bestScore = this.score;
       this.isNewBest = true;
-      saveBestScore(this.bestScore);
+      saveBestScore(this.bestKey, this.bestScore);
     }
     this.emit();
   }
@@ -261,9 +298,16 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-function loadBestScore(): number {
+/** Best scores are only comparable within the same rounds/time/difficulty. */
+function bestKeyFor(s: Settings): string {
+  return `adivinhia.best.${s.rounds}.${s.seconds}.${s.difficulty}`;
+}
+
+function loadBestScore(key: string, useLegacy: boolean): number {
   try {
-    const raw = localStorage.getItem(BEST_SCORE_KEY);
+    const raw =
+      localStorage.getItem(key) ??
+      (useLegacy ? localStorage.getItem(LEGACY_BEST_KEY) : null);
     const n = raw ? parseInt(raw, 10) : 0;
     return Number.isFinite(n) && n > 0 ? n : 0;
   } catch {
@@ -271,9 +315,9 @@ function loadBestScore(): number {
   }
 }
 
-function saveBestScore(score: number): void {
+function saveBestScore(key: string, score: number): void {
   try {
-    localStorage.setItem(BEST_SCORE_KEY, String(score));
+    localStorage.setItem(key, String(score));
   } catch {
     /* ignore persistence failures */
   }
