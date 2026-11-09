@@ -37,22 +37,40 @@
 
       <!-- Lobby -->
       <section id="lobby" class="lobby">
-        <h2 class="lobby__title">Jogar com amigos</h2>
-        <p class="lobby__sub">Desenho compartilhado em tempo real com seus amigos.</p>
+        <h2 id="lobby-title" class="lobby__title">Jogar com amigos</h2>
+        <p id="lobby-sub" class="lobby__sub">Desenho compartilhado em tempo real com seus amigos.</p>
         <div class="lobby__form">
           <label class="field">
             <span class="field__label">Seu nome</span>
             <input id="name-input" class="field__input" type="text" maxlength="24" placeholder="ex.: Dani" autocomplete="nickname" />
           </label>
 
-          <button id="create-btn" class="btn btn--primary" type="button">Criar sala nova</button>
-
-          <div class="lobby__divider"><span>ou entre numa sala existente</span></div>
-
-          <div class="lobby__join">
-            <input id="code-input" class="field__input" type="text" maxlength="8" placeholder="Código da sala (ex.: AB12)" autocapitalize="characters" autocomplete="off" />
-            <button id="join-btn" class="btn btn--ghost" type="button">Entrar</button>
+          <!-- Default: create a room (name only). The code field stays hidden until asked for. -->
+          <div id="default-block" class="lobby__block">
+            <button id="create-btn" class="btn btn--primary" type="button">Criar sala nova</button>
+            <button
+              id="join-toggle"
+              class="linkbtn"
+              type="button"
+              aria-expanded="false"
+              aria-controls="join-row"
+            >
+              Entrar com um código
+            </button>
+            <div id="join-row" class="lobby__join" hidden>
+              <input id="code-input" class="field__input" type="text" maxlength="8" placeholder="Código da sala" aria-label="Código da sala" autocapitalize="characters" autocomplete="off" />
+              <button id="join-btn" class="btn btn--ghost" type="button">Entrar</button>
+            </div>
           </div>
+
+          <!-- Opened from an invite link (?room=CODE): no code field needed. -->
+          <div id="invite-block" class="lobby__block" hidden>
+            <button id="invite-join-btn" class="btn btn--primary" type="button">
+              <span>Entrar na sala <strong id="invite-code"></strong></span>
+            </button>
+            <button id="invite-create-btn" class="linkbtn" type="button">Criar uma sala nova</button>
+          </div>
+
           <p id="lobby-error" class="lobby__error" role="alert"></p>
         </div>
       </section>
@@ -61,6 +79,7 @@
       <section id="room" class="room" hidden>
         <div class="room__bar">
           <span class="room__code">Sala <strong id="room-code">—</strong></span>
+          <button id="copy-link-btn" class="btn btn--ghost btn--sm" type="button">Copiar convite</button>
           <span id="conn-state" class="room__conn">—</span>
           <button id="leave-btn" class="btn btn--ghost btn--sm" type="button">Sair</button>
         </div>

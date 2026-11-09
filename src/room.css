@@ -79,23 +79,35 @@
   border-color: var(--accent);
 }
 
-.lobby__divider {
+.lobby__block {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 12px;
-  color: var(--ink-faint);
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: 600;
 }
 
-.lobby__divider::before,
-.lobby__divider::after {
-  content: "";
-  flex: 1;
-  height: 0;
-  border-top: 1.5px dashed var(--line);
+/* Low-emphasis text button (secondary action) */
+.linkbtn {
+  align-self: center;
+  background: none;
+  border: 0;
+  padding: 4px 6px;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.linkbtn:hover {
+  color: var(--accent);
+}
+
+.linkbtn:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .lobby__join {

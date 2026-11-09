@@ -12,15 +12,25 @@ const $ = <T extends HTMLElement>(sel: string): T => {
 
 // Lobby elements
 const lobby = $("#lobby");
+const lobbyTitle = $("#lobby-title");
+const lobbySub = $("#lobby-sub");
 const nameInput = $<HTMLInputElement>("#name-input");
 const codeInput = $<HTMLInputElement>("#code-input");
 const joinBtn = $<HTMLButtonElement>("#join-btn");
 const createBtn = $<HTMLButtonElement>("#create-btn");
+const joinToggle = $<HTMLButtonElement>("#join-toggle");
+const joinRow = $("#join-row");
+const defaultBlock = $("#default-block");
+const inviteBlock = $("#invite-block");
+const inviteJoinBtn = $<HTMLButtonElement>("#invite-join-btn");
+const inviteCreateBtn = $<HTMLButtonElement>("#invite-create-btn");
+const inviteCodeEl = $("#invite-code");
 const lobbyError = $("#lobby-error");
 
 // Room elements
 const room = $("#room");
 const roomCodeEl = $("#room-code");
+const copyLinkBtn = $<HTMLButtonElement>("#copy-link-btn");
 const playersEl = $("#players");
 const canvas = $<HTMLCanvasElement>("#board");
 const clearBtn = $<HTMLButtonElement>("#clear-btn");
@@ -154,6 +164,68 @@ codeInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") joinRoom();
 });
 
+// The code field stays hidden until the player says they have a code.
+joinToggle.addEventListener("click", () => {
+  const open = joinRow.hidden;
+  joinRow.hidden = !open;
+  joinToggle.setAttribute("aria-expanded", String(open));
+  showError("");
+  if (open) codeInput.focus();
+});
+
+// ---- Invite link flow (?room=CODE): no code field needed ----
+const CODE_RE = /^[A-Z0-9_-]{1,32}$/;
+let inviteCode: string | null = null;
+
+function enableInviteMode(code: string): void {
+  inviteCode = code;
+  inviteCodeEl.textContent = code;
+  lobbyTitle.textContent = "Você foi convidado";
+  lobbySub.textContent = "Digite seu nome para entrar na sala.";
+  defaultBlock.hidden = true;
+  inviteBlock.hidden = false;
+}
+
+inviteJoinBtn.addEventListener("click", () => {
+  const name = requireName();
+  if (name && inviteCode) enterRoom(inviteCode, name);
+});
+inviteCreateBtn.addEventListener("click", createRoom);
+
+// ---- Copy the invite link from inside the room ----
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Fallback for contexts where the async clipboard API is unavailable.
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try {
+      ok = document.execCommand("copy");
+    } catch {
+      ok = false;
+    }
+    ta.remove();
+    return ok;
+  }
+}
+
+copyLinkBtn.addEventListener("click", async () => {
+  const code = roomCodeEl.textContent ?? "";
+  const url = `${location.origin}/room?room=${encodeURIComponent(code)}`;
+  const ok = await copyText(url);
+  const original = "Copiar convite";
+  copyLinkBtn.textContent = ok ? "Link copiado" : "Não foi possível copiar";
+  if (!ok) window.prompt("Copie o link de convite:", url);
+  window.setTimeout(() => (copyLinkBtn.textContent = original), 2000);
+});
+
 clearBtn.addEventListener("click", () => {
   board?.clear();
   client?.sendClear();
@@ -172,12 +244,12 @@ chatForm.addEventListener("submit", (e) => {
   chatInput.value = "";
 });
 
-// Prefill name + code from storage / URL (?room=CODE).
+// Prefill the saved name; an invite link (?room=CODE) switches to invite mode.
 try {
   const savedName = localStorage.getItem("adivinhia.name");
   if (savedName) nameInput.value = savedName;
 } catch {
   /* ignore */
 }
-const urlCode = new URLSearchParams(location.search).get("room");
-if (urlCode) codeInput.value = urlCode.toUpperCase();
+const urlCode = (new URLSearchParams(location.search).get("room") ?? "").trim().toUpperCase();
+if (CODE_RE.test(urlCode)) enableInviteMode(urlCode);
