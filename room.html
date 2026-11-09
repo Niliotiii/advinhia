@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>AdivinhIA — Sala multiplayer</title>
-    <meta name="description" content="Desenho compartilhado em tempo real no AdivinhIA." />
+    <meta name="description" content="Todos desenham os mesmos conceitos e a IA dá a nota. Jogue com amigos no AdivinhIA." />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="theme-color" content="#f4f1ea" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -18,7 +18,7 @@
     <main class="app">
       <header class="topbar">
         <div class="brand">
-          <a class="brand__link" href="/" aria-label="Voltar ao single-player">
+          <a class="brand__link" href="/" aria-label="Voltar ao início">
             <span class="brand__mark" aria-hidden="true">
               <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <rect x="3" y="3" width="58" height="58" rx="14" fill="#1b1a17"/>
@@ -35,10 +35,10 @@
         <span class="topbar__tag">multiplayer</span>
       </header>
 
-      <!-- Lobby -->
+      <!-- Lobby: name, create or join -->
       <section id="lobby" class="lobby">
         <h2 id="lobby-title" class="lobby__title">Jogar com amigos</h2>
-        <p id="lobby-sub" class="lobby__sub">Desenho compartilhado em tempo real com seus amigos.</p>
+        <p id="lobby-sub" class="lobby__sub">Todos desenham os mesmos conceitos e a IA dá a nota.</p>
         <div class="lobby__form">
           <label class="field">
             <span class="field__label">Seu nome</span>
@@ -84,17 +84,56 @@
           <button id="leave-btn" class="btn btn--ghost btn--sm" type="button">Sair</button>
         </div>
 
-        <div class="room__grid">
+        <!-- Waiting room (warm-up board is shared) and the drawing rounds (board is private) -->
+        <div id="stage" class="room__grid">
           <div class="board-wrap">
-            <div class="board-frame">
-              <canvas id="board" width="420" height="420" aria-label="Quadro compartilhado"></canvas>
+            <section id="play-bar" class="prompt-bar" hidden>
+              <div class="prompt-bar__head">
+                <span class="prompt-bar__hint" id="mp-round">Desenho 1/6</span>
+                <span class="prompt-bar__word" id="mp-prompt">—</span>
+                <span class="play-time" id="mp-time" aria-live="off">20s</span>
+              </div>
+              <div class="timer-track" aria-hidden="true">
+                <div class="timer-bar" id="mp-timer-bar"></div>
+              </div>
+              <p class="play-note" id="mp-note" aria-live="polite"></p>
+            </section>
+
+            <div class="board-frame" id="board-frame">
+              <canvas id="board" width="420" height="420" aria-label="Quadro de desenho"></canvas>
             </div>
             <div class="board-controls">
               <button id="clear-btn" class="btn btn--ghost" type="button">Limpar</button>
             </div>
+            <p id="warmup-note" class="warmup-note">Aquecimento: o que você desenha aqui aparece para os outros jogadores.</p>
           </div>
 
           <aside class="side">
+            <section id="host-panel" class="host-panel" hidden>
+              <h3 class="side__title">Iniciar partida</h3>
+              <fieldset class="opt">
+                <legend class="opt__label">Desenhos</legend>
+                <div class="seg">
+                  <label class="seg__item"><input type="radio" name="mp-rounds" value="3" /><span>3</span></label>
+                  <label class="seg__item"><input type="radio" name="mp-rounds" value="6" /><span>6</span></label>
+                  <label class="seg__item"><input type="radio" name="mp-rounds" value="10" /><span>10</span></label>
+                </div>
+              </fieldset>
+              <fieldset class="opt">
+                <legend class="opt__label">Tempo por desenho</legend>
+                <div class="seg">
+                  <label class="seg__item"><input type="radio" name="mp-seconds" value="15" /><span>15s</span></label>
+                  <label class="seg__item"><input type="radio" name="mp-seconds" value="20" /><span>20s</span></label>
+                  <label class="seg__item"><input type="radio" name="mp-seconds" value="30" /><span>30s</span></label>
+                </div>
+              </fieldset>
+              <button id="start-btn" class="btn btn--primary" type="button" disabled>Iniciar partida</button>
+              <p id="start-hint" class="opt__help"></p>
+            </section>
+            <p id="guest-note" class="host-panel__note" hidden>
+              Aguardando o anfitrião iniciar a partida.
+            </p>
+
             <h3 class="side__title">Jogadores</h3>
             <ul id="players" class="players"></ul>
             <h3 class="side__title">Chat</h3>
@@ -105,6 +144,27 @@
             </form>
           </aside>
         </div>
+
+        <!-- The AI scores every drawing (runs in each player's browser) -->
+        <section id="judging-view" class="panel" hidden>
+          <h2 class="panel__title">A IA está avaliando os desenhos</h2>
+          <p class="panel__text" id="judging-text">Cada navegador pergunta à IA o quanto o desenho parece com o conceito pedido.</p>
+          <div class="spinner" aria-hidden="true"></div>
+        </section>
+
+        <!-- Final ranking -->
+        <section id="results-view" class="results" hidden>
+          <h2 id="results-title" class="results__title"></h2>
+          <div class="results__actions">
+            <button id="again-btn" class="btn btn--primary" type="button" hidden>Jogar de novo</button>
+            <p id="again-note" class="opt__help" hidden>Aguardando o anfitrião iniciar outra partida.</p>
+          </div>
+          <div class="results__table-wrap">
+            <table id="results-table" class="results__table"></table>
+          </div>
+          <h3 class="side__title">Desenhos e notas da IA</h3>
+          <div id="results-gallery" class="gallery"></div>
+        </section>
       </section>
     </main>
 

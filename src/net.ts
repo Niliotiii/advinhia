@@ -1,39 +1,56 @@
-import type {
-  ClientMessage,
-  ServerMessage,
-  Stroke,
-  Player,
-} from "./shared/protocol";
+import type { ClientMessage, DPoint, Point, ServerMessage } from "./shared/protocol";
 
-type Handlers = {
-  onWelcome?: (selfId: string, players: Player[]) => void;
-  onPresence?: (players: Player[]) => void;
-  onStroke?: (from: string, stroke: Stroke) => void;
-  onClear?: (from: string) => void;
-  onChat?: (from: string, name: string, text: string) => void;
-  onOpen?: () => void;
-  onClose?: () => void;
-};
+export type ConnStatus = "connecting" | "open" | "reconnecting" | "closed";
+
+interface Handlers {
+  onMessage: (msg: ServerMessage) => void;
+  onStatus?: (status: ConnStatus) => void;
+}
+
+const TOKEN_KEY = "adivinhia.token";
+/** Delays (ms) between reconnection attempts after an unexpected drop. */
+const RETRY_DELAYS = [500, 1000, 2000, 4000, 8000];
+/** Close codes sent by the server that must NOT trigger a reconnect. */
+const NO_RETRY_CODES = new Set([4000 /* replaced by another tab */, 4003 /* rejected */]);
 
 /**
- * Thin WebSocket client for a game room. Connects to /room/:code, sends the
- * join handshake, and dispatches server messages to handlers.
+ * Private reconnect token. Kept per tab (sessionStorage) so two tabs of the
+ * same browser are two different players, while a reload keeps the identity.
+ */
+function getToken(): string {
+  try {
+    let t = sessionStorage.getItem(TOKEN_KEY);
+    if (!t) {
+      t = crypto.randomUUID();
+      sessionStorage.setItem(TOKEN_KEY, t);
+    }
+    return t;
+  } catch {
+    return crypto.randomUUID();
+  }
+}
+
+/**
+ * WebSocket client for a game room. Joins with the private token (so a
+ * dropped player gets their identity and the current game state back) and
+ * reconnects automatically after unexpected disconnections.
  *
- * Outgoing strokes are coalesced: points accumulated within a short window are
- * flushed as a single "stroke" message to cut per-frame WebSocket overhead
- * (the server docs recommend batching at ~50–100ms).
+ * Lobby warm-up strokes are coalesced: points gathered within a short window
+ * go out as a single message (the Durable Object docs recommend batching).
  */
 export class RoomClient {
   private ws: WebSocket | null = null;
   private readonly handlers: Handlers;
   private readonly code: string;
   private readonly name: string;
+  private readonly token = getToken();
+  private intentionalClose = false;
+  private attempt = 0;
+  private retryTimer: number | null = null;
 
-  private strokeBuf: Stroke["points"] = [];
+  private strokeBuf: Point[] = [];
   private flushTimer: number | null = null;
   private static readonly FLUSH_MS = 60;
-
-  selfId = "";
 
   constructor(code: string, name: string, handlers: Handlers) {
     this.code = code;
@@ -42,38 +59,61 @@ export class RoomClient {
   }
 
   connect(): void {
+    this.handlers.onStatus?.(this.attempt === 0 ? "connecting" : "reconnecting");
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const url = `${proto}://${location.host}/room/${encodeURIComponent(this.code)}`;
     const ws = new WebSocket(url);
     this.ws = ws;
 
     ws.addEventListener("open", () => {
-      this.send({ t: "join", name: this.name });
-      this.handlers.onOpen?.();
+      this.attempt = 0;
+      this.send({ t: "join", name: this.name, token: this.token });
+      this.handlers.onStatus?.("open");
     });
 
     ws.addEventListener("message", (ev) => {
+      if (ws !== this.ws) return;
       let msg: ServerMessage;
       try {
         msg = JSON.parse(ev.data as string) as ServerMessage;
       } catch {
         return;
       }
-      this.dispatch(msg);
+      this.handlers.onMessage(msg);
     });
 
-    ws.addEventListener("close", () => this.handlers.onClose?.());
-    ws.addEventListener("error", () => this.handlers.onClose?.());
+    ws.addEventListener("close", (ev) => {
+      if (ws !== this.ws) return; // a stale socket
+      this.ws = null;
+      if (this.intentionalClose || NO_RETRY_CODES.has(ev.code)) {
+        this.handlers.onStatus?.("closed");
+        return;
+      }
+      this.scheduleRetry();
+    });
+  }
+
+  private scheduleRetry(): void {
+    if (this.attempt >= RETRY_DELAYS.length) {
+      this.handlers.onStatus?.("closed");
+      return;
+    }
+    this.handlers.onStatus?.("reconnecting");
+    const delay = RETRY_DELAYS[this.attempt++];
+    this.retryTimer = window.setTimeout(() => this.connect(), delay);
   }
 
   close(): void {
+    this.intentionalClose = true;
     if (this.flushTimer !== null) window.clearTimeout(this.flushTimer);
+    if (this.retryTimer !== null) window.clearTimeout(this.retryTimer);
     this.flushTimer = null;
-    this.ws?.close();
+    this.retryTimer = null;
+    this.ws?.close(1000, "bye");
     this.ws = null;
   }
 
-  // ---- outgoing ----
+  // ---- lobby warm-up (live relay) ----
 
   /** Queue a drawn point; flushed in a batch shortly after. */
   sendPoint(x: number, y: number, isStart: boolean): void {
@@ -92,8 +132,7 @@ export class RoomClient {
   }
 
   sendClear(): void {
-    // Flush any pending points first so ordering is preserved.
-    this.flushStroke();
+    this.flushStroke(); // keep ordering
     this.send({ t: "clear" });
   }
 
@@ -101,32 +140,27 @@ export class RoomClient {
     this.send({ t: "chat", text });
   }
 
+  // ---- game ----
+
+  sendStart(rounds: number, seconds: number): void {
+    this.send({ t: "start", rounds, seconds });
+  }
+
+  sendDrawing(round: number, pts: DPoint[]): void {
+    this.send({ t: "drawing", round, pts });
+  }
+
+  sendScores(scores: number[]): void {
+    this.send({ t: "scores", scores });
+  }
+
+  sendPlayAgain(): void {
+    this.send({ t: "playAgain" });
+  }
+
   private send(msg: ClientMessage): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
-    }
-  }
-
-  // ---- incoming ----
-
-  private dispatch(msg: ServerMessage): void {
-    switch (msg.t) {
-      case "welcome":
-        this.selfId = msg.selfId;
-        this.handlers.onWelcome?.(msg.selfId, msg.players);
-        break;
-      case "presence":
-        this.handlers.onPresence?.(msg.players);
-        break;
-      case "stroke":
-        this.handlers.onStroke?.(msg.from, msg.stroke);
-        break;
-      case "clear":
-        this.handlers.onClear?.(msg.from);
-        break;
-      case "chat":
-        this.handlers.onChat?.(msg.from, msg.name, msg.text);
-        break;
     }
   }
 }

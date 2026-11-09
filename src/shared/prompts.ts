@@ -58,6 +58,5 @@ export const PROMPTS: Prompt[] = [
   { label: "book", pt: "livro" },
   { label: "bread", pt: "pão" },
   { label: "donut", pt: "rosquinha" },
-  { label: "ladder", pt: "escada" },
   { label: "sailboat", pt: "veleiro" },
 ];

@@ -150,6 +150,26 @@ export class SketchRecognizer {
   }
 
   /**
+   * Probability (0..1) the model assigns to ONE specific concept for a
+   * finished drawing. Unlike predict() it does not use the smoothing history,
+   * so it judges exactly this image. A blank canvas scores 0.
+   */
+  scoreFor(source: HTMLCanvasElement, label: string): number {
+    if (!this.model) throw new Error("Model not loaded");
+    const idx = this.classNames.indexOf(label);
+    if (idx < 0) return 0;
+    const input = this.preprocess(source);
+    if (!input) return 0;
+
+    const probs = tf.tidy(() => {
+      const tensor = tf.tensor(input, [1, INPUT_SIZE, INPUT_SIZE, 1]);
+      const output = this.model!.predict(tensor) as tf.Tensor;
+      return output.dataSync() as Float32Array;
+    });
+    return probs[idx] ?? 0;
+  }
+
+  /**
    * Turn the drawing canvas into a normalized 28x28 Float32Array (values in
    * [0,1], bright strokes on a dark background), using bounding-box crop +
    * centered scaling. Returns null if the canvas is effectively empty.

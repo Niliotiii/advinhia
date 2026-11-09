@@ -10,6 +10,7 @@ export class DrawingBoard {
   private lastX = 0;
   private lastY = 0;
   private _dirty = false;
+  private enabled = true;
   private onStrokeEnd?: () => void;
   private onSegment?: (nx: number, ny: number, isStart: boolean) => void;
 
@@ -48,6 +49,15 @@ export class DrawingBoard {
     this.ctx.lineWidth = px;
   }
 
+  /**
+   * Lock/unlock local drawing (e.g. outside the round time window). Locking
+   * during a stroke ends it without firing the stroke-end callback.
+   */
+  setEnabled(on: boolean): void {
+    this.enabled = on;
+    if (!on) this.drawing = false;
+  }
+
   /** True if anything has been drawn since the last clear. */
   get dirty(): boolean {
     return this._dirty;
@@ -72,6 +82,7 @@ export class DrawingBoard {
   }
 
   private start(x: number, y: number): void {
+    if (!this.enabled) return;
     this.drawing = true;
     this.lastX = x;
     this.lastY = y;

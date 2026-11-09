@@ -1,4 +1,4 @@
-import { PROMPTS, type Prompt } from "./prompts";
+import { PROMPTS, type Prompt } from "./shared/prompts";
 import {
   CONFIDENCE_BY_DIFFICULTY,
   DEFAULT_SETTINGS,

@@ -1,8 +1,20 @@
 import "./style.css";
 import "./room.css";
 import { DrawingBoard } from "./board";
-import { RoomClient } from "./net";
-import type { Player } from "./shared/protocol";
+import { renderDrawing } from "./drawing";
+import { RoomClient, type ConnStatus } from "./net";
+import { loadSettings } from "./settings";
+import { MIN_PLAYERS } from "./shared/protocol";
+import type {
+  DPoint,
+  DrawingEntry,
+  Phase,
+  Player,
+  PromptRef,
+  Results,
+  ServerMessage,
+} from "./shared/protocol";
+import type { SketchRecognizer } from "./recognizer";
 
 const $ = <T extends HTMLElement>(sel: string): T => {
   const el = document.querySelector<T>(sel);
@@ -10,7 +22,7 @@ const $ = <T extends HTMLElement>(sel: string): T => {
   return el;
 };
 
-// Lobby elements
+// ---- Lobby elements ----
 const lobby = $("#lobby");
 const lobbyTitle = $("#lobby-title");
 const lobbySub = $("#lobby-sub");
@@ -27,21 +39,108 @@ const inviteCreateBtn = $<HTMLButtonElement>("#invite-create-btn");
 const inviteCodeEl = $("#invite-code");
 const lobbyError = $("#lobby-error");
 
-// Room elements
+// ---- Room elements ----
 const room = $("#room");
 const roomCodeEl = $("#room-code");
 const copyLinkBtn = $<HTMLButtonElement>("#copy-link-btn");
-const playersEl = $("#players");
+const connState = $("#conn-state");
+const leaveBtn = $<HTMLButtonElement>("#leave-btn");
+const stage = $("#stage");
+const playBar = $("#play-bar");
+const mpRound = $("#mp-round");
+const mpPrompt = $("#mp-prompt");
+const mpTime = $("#mp-time");
+const mpTimerBar = $("#mp-timer-bar");
+const mpNote = $("#mp-note");
+const boardFrame = $("#board-frame");
 const canvas = $<HTMLCanvasElement>("#board");
 const clearBtn = $<HTMLButtonElement>("#clear-btn");
-const leaveBtn = $<HTMLButtonElement>("#leave-btn");
+const warmupNote = $("#warmup-note");
+const hostPanel = $("#host-panel");
+const guestNote = $("#guest-note");
+const startBtn = $<HTMLButtonElement>("#start-btn");
+const startHint = $("#start-hint");
+const playersEl = $("#players");
 const chatLog = $("#chat-log");
 const chatInput = $<HTMLInputElement>("#chat-input");
 const chatForm = $<HTMLFormElement>("#chat-form");
-const connState = $("#conn-state");
+const judgingView = $("#judging-view");
+const judgingText = $("#judging-text");
+const resultsView = $("#results-view");
+const resultsTitle = $("#results-title");
+const resultsTable = $("#results-table");
+const resultsGallery = $("#results-gallery");
+const againBtn = $<HTMLButtonElement>("#again-btn");
+const againNote = $("#again-note");
 
+// ---- Constants ----
+/** Fixed brush: the thickness changes what the AI sees, so everyone uses the same. */
+const GAME_BRUSH_PX = 14;
+const BOARD_PX = 420;
+/**
+ * Coordinates are sent with 4 decimals (~0.04px on the 420px board). With 3
+ * decimals the AI's score for the replayed drawing drifted up to ~14 points
+ * from the live one on wobbly strokes; with 4 it stays within ~2 points.
+ */
+const COORD_SCALE = 10000;
+const MAX_POINTS = 4000;
+const THUMB_PX = 210;
+
+// ---- State ----
 let board: DrawingBoard | null = null;
 let client: RoomClient | null = null;
+let recognizerPromise: Promise<SketchRecognizer> | null = null;
+
+let selfId = "";
+let hostId: string | null = null;
+let players: Player[] = [];
+let phase: Phase = "lobby";
+
+let inGame = false;
+let settings = { rounds: 6, seconds: 20 };
+let clockOffset = 0; // server clock - local clock
+let round = -1;
+let shownRound = -2; // round currently on the board (to keep a drawing across reconnects)
+let totalRounds = 0;
+let roundEndsAt = 0;
+let nextAt = 0;
+let currentPts: DPoint[] = [];
+let myDrawings: DPoint[][] = [];
+const submitted = new Set<number>();
+const acked = new Set<number>();
+let computedScores: number[] | null = null;
+let ticker: number | null = null;
+
+const serverNow = (): number => Date.now() + clockOffset;
+const roundCoord = (v: number): number => Math.round(v * COORD_SCALE) / COORD_SCALE;
+
+// ---- Small DOM helpers ----
+function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  className?: string,
+  text?: string,
+): HTMLElementTagNameMap[K] {
+  const e = document.createElement(tag);
+  if (className) e.className = className;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function showError(msg: string): void {
+  lobbyError.textContent = msg;
+}
+
+function addChat(name: string, text: string, self = false): void {
+  const li = el("li", "chat-msg" + (self ? " chat-msg--self" : ""));
+  li.append(el("span", "chat-msg__name", name), document.createTextNode(` ${text}`));
+  chatLog.appendChild(li);
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function addSystem(text: string): void {
+  chatLog.appendChild(el("li", "chat-msg chat-msg--system", text));
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
 
 function randomCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -50,70 +149,395 @@ function randomCode(): string {
   return s;
 }
 
-function showError(msg: string): void {
-  lobbyError.textContent = msg;
+// ---- The AI (loaded on demand: only needed to judge) ----
+function getRecognizer(): Promise<SketchRecognizer> {
+  if (!recognizerPromise) {
+    recognizerPromise = import("./recognizer")
+      .then(async (m) => {
+        const r = new m.SketchRecognizer();
+        await r.load();
+        return r;
+      })
+      .catch((err) => {
+        recognizerPromise = null; // allow a retry
+        throw err;
+      });
+  }
+  return recognizerPromise;
 }
 
-function renderPlayers(players: Player[]): void {
-  playersEl.innerHTML = players
-    .map(
-      (p) =>
-        `<li class="player${p.id === client?.selfId ? " player--self" : ""}">${escapeHtml(p.name)}</li>`,
-    )
-    .join("");
+// ---- Rendering: players, host area ----
+function connectedCount(): number {
+  return players.filter((p) => p.connected !== false).length;
 }
 
-function addChat(name: string, text: string, self = false): void {
-  const li = document.createElement("li");
-  li.className = "chat-msg" + (self ? " chat-msg--self" : "");
-  li.innerHTML = `<span class="chat-msg__name">${escapeHtml(name)}</span> ${escapeHtml(text)}`;
-  chatLog.appendChild(li);
-  chatLog.scrollTop = chatLog.scrollHeight;
+function renderPlayers(): void {
+  playersEl.replaceChildren(
+    ...players.map((p) => {
+      const off = p.connected === false;
+      const li = el(
+        "li",
+        "player" + (p.id === selfId ? " player--self" : "") + (off ? " player--off" : ""),
+      );
+      li.append(document.createTextNode(p.name));
+      if (p.id === hostId) li.append(el("span", "player__tag", "anfitrião"));
+      if (off) li.append(el("span", "player__tag", "desconectado"));
+      return li;
+    }),
+  );
 }
 
-function addSystem(text: string): void {
-  const li = document.createElement("li");
-  li.className = "chat-msg chat-msg--system";
-  li.textContent = text;
-  chatLog.appendChild(li);
-  chatLog.scrollTop = chatLog.scrollHeight;
+function renderHostArea(): void {
+  const waiting = phase === "lobby";
+  const amHost = hostId !== null && hostId === selfId;
+  hostPanel.hidden = !(waiting && amHost);
+  guestNote.hidden = !(waiting && !amHost);
+  if (waiting && amHost) {
+    const n = connectedCount();
+    startBtn.disabled = n < MIN_PLAYERS;
+    startHint.textContent =
+      n < MIN_PLAYERS
+        ? `Aguardando pelo menos ${MIN_PLAYERS} jogadores (${n} na sala). Use "Copiar convite".`
+        : `${n} jogadores na sala.`;
+  }
+  if (phase === "results") {
+    againBtn.hidden = !amHost;
+    againNote.hidden = amHost;
+  }
 }
 
-function escapeHtml(s: string): string {
-  const d = document.createElement("div");
-  d.textContent = s;
-  return d.innerHTML;
+function showPhase(p: Phase): void {
+  phase = p;
+  const inStage = p === "lobby" || p === "drawing" || p === "between";
+  stage.hidden = !inStage;
+  judgingView.hidden = p !== "judging";
+  resultsView.hidden = p !== "results";
+  playBar.hidden = !(p === "drawing" || p === "between");
+  warmupNote.hidden = p !== "lobby";
+  boardFrame.classList.toggle("board-frame--locked", p === "between");
+  // Shared warm-up in the lobby; private and time-locked while playing.
+  board?.setEnabled(p === "lobby" || (p === "drawing" && serverNow() < roundEndsAt));
+  renderHostArea();
 }
 
+// ---- Drawing rounds ----
+function record(nx: number, ny: number, isStart: boolean): void {
+  if (currentPts.length >= MAX_POINTS) {
+    board?.setEnabled(false);
+    mpNote.textContent = "Limite de traço atingido neste desenho.";
+    return;
+  }
+  const x = roundCoord(nx);
+  const y = roundCoord(ny);
+  if (!isStart) {
+    // Only exact repeats are dropped: any other filtering bends the stroke
+    // and would change the score the AI gives the replayed drawing.
+    const last = currentPts[currentPts.length - 1];
+    if (last && last[0] === x && last[1] === y) return;
+  }
+  currentPts.push([x, y, isStart ? 1 : 0]);
+}
+
+function lockAndSubmit(): void {
+  board?.setEnabled(false);
+  submitted.add(round);
+  myDrawings[round] = currentPts.slice();
+  if (currentPts.length > 0) {
+    client?.sendDrawing(round, myDrawings[round]);
+  } else {
+    mpNote.textContent = "Você não desenhou nada neste desenho.";
+  }
+}
+
+function startTicker(): void {
+  if (ticker === null) ticker = window.setInterval(tick, 150);
+  tick();
+}
+
+function stopTicker(): void {
+  if (ticker !== null) window.clearInterval(ticker);
+  ticker = null;
+}
+
+function tick(): void {
+  const now = serverNow();
+  if (phase === "drawing") {
+    const left = roundEndsAt - now;
+    mpTime.textContent = `${Math.max(0, Math.ceil(left / 1000))}s`;
+    mpTimerBar.style.width = `${Math.max(0, Math.min(100, (left / (settings.seconds * 1000)) * 100))}%`;
+    mpTimerBar.classList.toggle("timer-bar--low", left <= 5000);
+    if (left <= 0 && !submitted.has(round)) lockAndSubmit();
+  } else if (phase === "between") {
+    mpTime.textContent = "0s";
+    mpTimerBar.style.width = "0%";
+    const left = Math.max(0, Math.ceil((nextAt - now) / 1000));
+    const last = round + 1 >= totalRounds;
+    const sent = acked.has(round) ? "Desenho enviado. " : "";
+    mpNote.textContent = last
+      ? `${sent}A IA vai avaliar os desenhos em ${left}s…`
+      : `${sent}Próximo conceito em ${left}s…`;
+  } else {
+    stopTicker();
+  }
+}
+
+// ---- Judging: the local AI scores this player's own drawings ----
+async function evaluate(rounds: PromptRef[]): Promise<void> {
+  if (computedScores) {
+    client?.sendScores(computedScores); // re-send after a reconnect; the server ignores repeats
+    return;
+  }
+  let scores: number[];
+  try {
+    const rec = await getRecognizer();
+    const off = document.createElement("canvas");
+    off.width = BOARD_PX;
+    off.height = BOARD_PX;
+    scores = rounds.map((r, i) => {
+      const pts = myDrawings[i];
+      if (!pts || pts.length === 0) return 0;
+      renderDrawing(off, pts, GAME_BRUSH_PX);
+      return rec.scoreFor(off, r.label);
+    });
+  } catch (err) {
+    console.error(err);
+    judgingText.textContent =
+      "Não foi possível carregar a IA neste navegador. Seus desenhos contam 0%.";
+    scores = rounds.map(() => 0);
+  }
+  computedScores = scores;
+  client?.sendScores(scores);
+}
+
+// ---- Results ----
+function renderResults(res: Results, drawings: DrawingEntry[]): void {
+  const label = (id: string): string => (id === selfId ? "Você" : (res.players.find((p) => p.id === id)?.name ?? "?"));
+
+  if (res.winners.length === 0) {
+    resultsTitle.textContent = "Ninguém pontuou desta vez.";
+  } else if (res.winners.length === 1) {
+    resultsTitle.textContent =
+      res.winners[0] === selfId ? "Você venceu!" : `${label(res.winners[0])} venceu!`;
+  } else {
+    resultsTitle.textContent = `Empate: ${res.winners.map(label).join(", ")}`;
+  }
+
+  const ranked = [...res.players].sort((a, b) => b.total - a.total);
+
+  // Ranking table
+  const head = el("tr");
+  head.append(el("th", "", "#"), el("th", "", "Jogador"));
+  res.rounds.forEach((r, i) => {
+    const th = el("th", "results__num", `${i + 1}`);
+    th.title = r.pt;
+    head.append(th);
+  });
+  head.append(el("th", "results__num", "Total"));
+  const rows = ranked.map((p, i) => {
+    const tr = el(
+      "tr",
+      (res.winners.includes(p.id) ? "results__row--win " : "") + (p.id === selfId ? "results__row--me" : ""),
+    );
+    tr.append(el("td", "", `${i + 1}`), el("td", "", p.id === selfId ? `${p.name} (você)` : p.name));
+    for (const s of p.scores) tr.append(el("td", "results__num", `${s}%`));
+    tr.append(el("td", "results__num results__total", `${p.total}`));
+    return tr;
+  });
+  resultsTable.replaceChildren(head, ...rows);
+
+  // Gallery: for each concept, every player's drawing with the AI's percentage
+  const byKey = new Map<string, DrawingEntry>();
+  for (const d of drawings) byKey.set(`${d.playerId}:${d.round}`, d);
+
+  const sections = res.rounds.map((r, i) => {
+    const section = el("section", "gallery__round");
+    section.append(el("h4", "gallery__concept", `${i + 1}. ${r.pt}`));
+    const row = el("div", "gallery__row");
+    for (const p of ranked) {
+      const card = el("figure", "gallery__card");
+      const d = byKey.get(`${p.id}:${i}`);
+      if (d) {
+        const c = el("canvas", "gallery__thumb");
+        c.width = THUMB_PX;
+        c.height = THUMB_PX;
+        renderDrawing(c, d.pts, (GAME_BRUSH_PX * THUMB_PX) / BOARD_PX);
+        c.setAttribute("aria-label", `Desenho de ${p.name}: ${r.pt}`);
+        card.append(c);
+      } else {
+        card.append(el("div", "gallery__empty", "sem desenho"));
+      }
+      const cap = el("figcaption", "gallery__caption");
+      cap.append(el("span", "gallery__name", p.id === selfId ? "Você" : p.name), el("strong", "", `${p.scores[i] ?? 0}%`));
+      card.append(cap);
+      row.append(card);
+    }
+    section.append(row);
+    return section;
+  });
+  resultsGallery.replaceChildren(...sections);
+  renderHostArea();
+}
+
+// ---- Server messages ----
+function onMessage(msg: ServerMessage): void {
+  switch (msg.t) {
+    case "welcome": {
+      selfId = msg.selfId;
+      hostId = msg.hostId;
+      players = msg.players;
+      renderPlayers();
+      if (msg.phase === "lobby") {
+        resetGame();
+        showPhase("lobby");
+        addSystem(`Você entrou na sala ${roomCodeEl.textContent}.`);
+      } else {
+        addSystem("Você voltou para a partida em andamento.");
+      }
+      break;
+    }
+    case "presence":
+      players = msg.players;
+      hostId = msg.hostId;
+      renderPlayers();
+      renderHostArea();
+      break;
+    case "gameStart": {
+      settings = { rounds: msg.rounds, seconds: msg.seconds };
+      if (!inGame) {
+        inGame = true;
+        myDrawings = [];
+        submitted.clear();
+        acked.clear();
+        computedScores = null;
+        shownRound = -2;
+        board?.clear();
+      }
+      void getRecognizer().catch(() => {}); // warm up; it is needed when judging
+      break;
+    }
+    case "roundStart": {
+      clockOffset = msg.serverNow - Date.now();
+      round = msg.round;
+      totalRounds = msg.total;
+      roundEndsAt = msg.endsAt;
+      if (shownRound !== msg.round) {
+        // A new concept (a reconnect during the same round keeps the drawing).
+        shownRound = msg.round;
+        currentPts = [];
+        board?.clear();
+        mpNote.textContent = "";
+      }
+      mpRound.textContent = `Desenho ${msg.round + 1}/${msg.total}`;
+      mpPrompt.textContent = msg.prompt.pt;
+      showPhase("drawing");
+      startTicker();
+      break;
+    }
+    case "roundEnd": {
+      clockOffset = msg.serverNow - Date.now();
+      round = msg.round;
+      nextAt = msg.nextAt;
+      if (!submitted.has(round)) lockAndSubmit();
+      else if (currentPts.length > 0 && !acked.has(round)) client?.sendDrawing(round, myDrawings[round]);
+      showPhase("between");
+      startTicker();
+      break;
+    }
+    case "drawingAck":
+      acked.add(msg.round);
+      break;
+    case "judging":
+      clockOffset = msg.serverNow - Date.now();
+      stopTicker();
+      showPhase("judging");
+      void evaluate(msg.rounds);
+      break;
+    case "results":
+      stopTicker();
+      showPhase("results");
+      renderResults(msg.results, msg.drawings);
+      break;
+    case "lobby":
+      resetGame();
+      showPhase("lobby");
+      addSystem("De volta ao lobby. O anfitrião pode iniciar outra partida.");
+      break;
+    case "stroke":
+      if (phase === "lobby") {
+        for (const p of msg.stroke.points) board?.drawRemoteSegment(msg.from, p.x, p.y, !!p.s);
+      }
+      break;
+    case "clear":
+      if (phase === "lobby") {
+        board?.clear();
+        board?.resetRemote(msg.from);
+      }
+      break;
+    case "chat":
+      addChat(msg.name, msg.text, msg.from === selfId);
+      break;
+    case "error":
+      if (msg.code === "in_progress" || msg.code === "room_full") backToLobby(msg.message);
+      else addSystem(msg.message);
+      break;
+  }
+}
+
+/** Forget everything about the previous game. */
+function resetGame(): void {
+  inGame = false;
+  round = -1;
+  shownRound = -2;
+  currentPts = [];
+  myDrawings = [];
+  submitted.clear();
+  acked.clear();
+  computedScores = null;
+  stopTicker();
+  board?.clear();
+  mpTimerBar.style.width = "100%";
+  mpTimerBar.classList.remove("timer-bar--low");
+}
+
+const STATUS_LABEL: Record<ConnStatus, string> = {
+  connecting: "conectando…",
+  open: "conectado",
+  reconnecting: "reconectando…",
+  closed: "desconectado",
+};
+
+function onStatus(s: ConnStatus): void {
+  if (!client) return;
+  connState.textContent = STATUS_LABEL[s];
+}
+
+/** The server refused us (room full / game running): go back to the lobby form. */
+function backToLobby(message: string): void {
+  client?.close();
+  client = null;
+  stopTicker();
+  room.hidden = true;
+  lobby.hidden = false;
+  history.replaceState(null, "", "/room");
+  showError(message);
+}
+
+// ---- Entering a room ----
 function enterRoom(code: string, name: string): void {
   lobby.hidden = true;
   room.hidden = false;
   roomCodeEl.textContent = code;
-  connState.textContent = "conectando…";
+  connState.textContent = STATUS_LABEL.connecting;
+  history.replaceState(null, "", `/room?room=${encodeURIComponent(code)}`); // a reload rejoins through the invite flow
 
   board = new DrawingBoard(canvas);
-  client = new RoomClient(code, name, {
-    onOpen: () => (connState.textContent = "conectado"),
-    onClose: () => (connState.textContent = "desconectado"),
-    onWelcome: (_selfId, players) => {
-      renderPlayers(players);
-      addSystem(`Você entrou na sala ${code}.`);
-    },
-    onPresence: (players) => renderPlayers(players),
-    onStroke: (from, stroke) => {
-      for (const p of stroke.points) {
-        board!.drawRemoteSegment(from, p.x, p.y, !!p.s);
-      }
-    },
-    onClear: (from) => {
-      board!.clear();
-      board!.resetRemote(from);
-    },
-    onChat: (from, cname, text) => addChat(cname, text, from === client?.selfId),
+  board.setBrushSize(GAME_BRUSH_PX);
+  board.setOnSegment((nx, ny, isStart) => {
+    if (phase === "lobby") client?.sendPoint(nx, ny, isStart);
+    else if (phase === "drawing") record(nx, ny, isStart);
   });
 
-  // Stream local drawing to peers.
-  board.setOnSegment((nx, ny, isStart) => client!.sendPoint(nx, ny, isStart));
+  client = new RoomClient(code, name, { onMessage, onStatus });
   client.connect();
 }
 
@@ -151,7 +575,7 @@ function joinRoom(): void {
     codeInput.focus();
     return;
   }
-  if (!/^[A-Z0-9_-]{1,32}$/.test(clean)) {
+  if (!CODE_RE.test(clean)) {
     showError("Código inválido.");
     return;
   }
@@ -192,7 +616,7 @@ inviteJoinBtn.addEventListener("click", () => {
 });
 inviteCreateBtn.addEventListener("click", createRoom);
 
-// ---- Copy the invite link from inside the room ----
+// ---- Room controls ----
 async function copyText(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
@@ -227,13 +651,19 @@ copyLinkBtn.addEventListener("click", async () => {
 });
 
 clearBtn.addEventListener("click", () => {
-  board?.clear();
-  client?.sendClear();
+  if (phase === "lobby") {
+    board?.clear();
+    client?.sendClear();
+  } else if (phase === "drawing" && !submitted.has(round)) {
+    board?.clear();
+    currentPts = [];
+    board?.setEnabled(serverNow() < roundEndsAt);
+  }
 });
 
 leaveBtn.addEventListener("click", () => {
   client?.close();
-  location.reload();
+  location.assign("/room");
 });
 
 chatForm.addEventListener("submit", (e) => {
@@ -244,7 +674,27 @@ chatForm.addEventListener("submit", (e) => {
   chatInput.value = "";
 });
 
-// Prefill the saved name; an invite link (?room=CODE) switches to invite mode.
+// Host: pick the settings and start
+const checkedValue = (name: string): number =>
+  Number(document.querySelector<HTMLInputElement>(`input[name="${name}"]:checked`)?.value);
+
+startBtn.addEventListener("click", () => {
+  client?.sendStart(checkedValue("mp-rounds"), checkedValue("mp-seconds"));
+});
+
+againBtn.addEventListener("click", () => client?.sendPlayAgain());
+
+// ---- Boot ----
+// Default the host's choices to the solo settings.
+const saved = loadSettings();
+for (const [name, value] of [
+  ["mp-rounds", saved.rounds],
+  ["mp-seconds", saved.seconds],
+] as const) {
+  const input = document.querySelector<HTMLInputElement>(`input[name="${name}"][value="${value}"]`);
+  if (input) input.checked = true;
+}
+
 try {
   const savedName = localStorage.getItem("adivinhia.name");
   if (savedName) nameInput.value = savedName;

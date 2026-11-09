@@ -1,16 +1,33 @@
 /**
- * Shared WebSocket message protocol for AdivinhIA multiplayer (Fase 0+1).
+ * Shared WebSocket protocol for AdivinhIA multiplayer.
  *
- * Used by both the client (src/net.ts) and the server (Durable Object
- * GameRoom). At this stage the server is just a real-time relay: it tracks
- * presence and broadcasts drawing strokes / clear / chat between players.
- * The game state machine still lives on the client and will migrate to the
- * server in a later phase.
+ * Game mode ("desenho simultâneo"): every player in the room draws the SAME
+ * concepts, each with the SAME time limit. Drawings stay private while they
+ * are made. When all rounds are done, the AI (running in each player's
+ * browser) scores every drawing as the probability it assigns to the
+ * requested concept; the total of those percentages decides the winner.
  *
- * Coordinates in strokes are normalized to [0,1] so they are independent of
- * each client's canvas size.
+ * Server flow:   lobby -> drawing -> between -> (drawing -> between)* ->
+ *                judging -> results -> (host: playAgain) -> lobby
+ *
+ * Coordinates are normalized to [0,1] so they do not depend on canvas size.
  */
 
+export type Phase = "lobby" | "drawing" | "between" | "judging" | "results";
+
+export interface Player {
+  id: string;
+  name: string;
+  /** false while a player is disconnected during a game (they can come back) */
+  connected?: boolean;
+}
+
+export interface PromptRef {
+  label: string; // model class name (English)
+  pt: string; // display name (Portuguese)
+}
+
+// ---- Free-draw warm-up in the lobby (live relay) ----
 export interface Point {
   x: number; // 0..1
   y: number; // 0..1
@@ -18,31 +35,96 @@ export interface Point {
   s?: boolean;
 }
 
-/** A single drawn segment: a polyline of normalized points. */
 export interface Stroke {
   points: Point[];
 }
 
-export interface Player {
+// ---- Submitted drawings: compact [x, y, penDown] tuples ----
+/** x, y in [0,1]; third value is 1 when this point starts a new stroke. */
+export type DPoint = [number, number, number];
+
+export interface DrawingEntry {
+  playerId: string;
+  round: number;
+  pts: DPoint[];
+}
+
+export interface PlayerResult {
   id: string;
   name: string;
+  connected: boolean;
+  /** AI percentage (integer 0..100) given to the requested concept, per round */
+  scores: number[];
+  /** sum of `scores` */
+  total: number;
 }
+
+export interface Results {
+  rounds: PromptRef[];
+  players: PlayerResult[];
+  /** ids with the highest total (more than one on a tie); empty if everyone scored 0 */
+  winners: string[];
+}
+
+export type ErrorCode =
+  | "not_host"
+  | "bad_phase"
+  | "not_enough_players"
+  | "bad_settings"
+  | "bad_scores"
+  | "bad_drawing"
+  | "in_progress"
+  | "room_full";
 
 // ---- Client → Server ----
 export type ClientMessage =
-  | { t: "join"; name: string }
+  | { t: "join"; name: string; token?: string }
+  | { t: "start"; rounds: number; seconds: number }
+  | { t: "drawing"; round: number; pts: DPoint[] }
+  | { t: "scores"; scores: number[] } // AI probabilities 0..1, one per round
+  | { t: "playAgain" }
   | { t: "stroke"; stroke: Stroke }
   | { t: "clear" }
   | { t: "chat"; text: string };
 
 // ---- Server → Client ----
 export type ServerMessage =
-  | { t: "welcome"; selfId: string; players: Player[] }
-  | { t: "presence"; players: Player[] }
+  | {
+      t: "welcome";
+      selfId: string;
+      /** private reconnect token: store it locally, never shown to others */
+      token: string;
+      players: Player[];
+      hostId: string | null;
+      phase: Phase;
+    }
+  | { t: "presence"; players: Player[]; hostId: string | null }
+  | { t: "gameStart"; rounds: number; seconds: number }
+  | {
+      t: "roundStart";
+      round: number; // 0-based
+      total: number;
+      prompt: PromptRef;
+      endsAt: number; // server clock (ms)
+      serverNow: number; // server clock when sent, to compute the offset
+    }
+  | { t: "roundEnd"; round: number; nextAt: number; serverNow: number }
+  | { t: "drawingAck"; round: number }
+  | { t: "judging"; deadline: number; serverNow: number; rounds: PromptRef[] }
+  | { t: "results"; results: Results; drawings: DrawingEntry[] }
+  | { t: "lobby" }
+  | { t: "error"; code: ErrorCode; message: string }
   | { t: "stroke"; from: string; stroke: Stroke }
   | { t: "clear"; from: string }
   | { t: "chat"; from: string; name: string; text: string };
 
 export const MAX_PLAYERS = 8;
+export const MIN_PLAYERS = 2;
 export const MAX_NAME_LEN = 24;
 export const MAX_CHAT_LEN = 200;
+
+export const ROUNDS_OPTIONS = [3, 6, 10] as const;
+export const SECONDS_OPTIONS = [15, 20, 30] as const;
+
+/** Upper bound of points accepted for a single drawing. */
+export const MAX_DRAWING_POINTS = 4000;

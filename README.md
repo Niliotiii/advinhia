@@ -42,7 +42,7 @@ src/
   recognizer.ts  — carrega o modelo TF.js e roda inferência (top-K)
   board.ts       — quadro de desenho (mouse + touch)
   game.ts        — máquina de estados: rodadas, timer, pontuação por velocidade
-  prompts.ts     — subconjunto curado das 345 classes (rótulo EN p/ match + PT p/ exibir)
+  shared/prompts.ts — subconjunto curado das 345 classes (rótulo EN p/ match + PT p/ exibir)
   main.ts        — fiação da UI + loop de inferência (debounce ~250ms)
   style.css      — estilos
 public/
@@ -94,7 +94,36 @@ npm run deploy       # build + wrangler deploy
 - **PWA offline**: após o primeiro load, o jogo roda 100% sem rede
   (service worker cacheia app + modelo). Combina com a inferência local.
 
+## Multiplayer
+
+Todos na sala desenham os **mesmos conceitos**, com o **mesmo tempo** por desenho.
+Os desenhos são privados enquanto são feitos. No fim, a IA (que continua rodando
+no navegador de cada jogador) dá a cada desenho a porcentagem de certeza de que
+ele é o conceito pedido. Vence quem somar mais.
+
+- **Servidor**: um Durable Object por sala (`src/worker/game-room.ts`) é dono da
+  partida: jogadores, conceitos sorteados, cronômetro sincronizado (via `alarm`),
+  desenhos recebidos (SQLite) e ranking. O estado é salvo antes de ser anunciado,
+  então sobrevive à hibernação e a reinícios.
+- **Reconexão**: cada jogador tem um token por aba; quem cai volta com a mesma
+  identidade e o mesmo cronômetro.
+- **Justiça**: pincel fixo (14px) para todos, e uma rodada sem desenho vale 0%
+  mesmo que o cliente envie outra nota.
+- **Limite conhecido**: as notas da IA são calculadas no navegador de cada
+  jogador, então um cliente adulterado poderia enviar notas falsas. O servidor
+  guarda os desenhos, o que permite evoluir para uma verificação cruzada.
+
+### Testes
+
+Os testes ficam em `tests/` e precisam do servidor local (`npx wrangler dev --port 8787`
+depois de `npm run build`) e, os de navegador, de um Chrome com
+`--remote-debugging-port`. Cada arquivo tem as instruções no cabeçalho:
+
+- `tests/game-flow.cjs`: fluxo do servidor (2 jogadores simulados).
+- `tests/mp-ui.cjs`: partida completa com 2 abas reais e a IA de verdade.
+- `tests/scoring.cjs`: a nota de um desenho reproduzido bate com a do desenho ao vivo.
+
 ## Próximos passos possíveis
 
-- Multiplayer via WebSocket (Durable Objects na Cloudflare).
+- Verificação cruzada das notas (todos os navegadores avaliam todos os desenhos).
 - Níveis de dificuldade (curar as 345 classes por facilidade de desenho).
