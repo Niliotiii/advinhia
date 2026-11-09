@@ -79,14 +79,37 @@
   border-color: var(--accent);
 }
 
-.lobby__actions {
+.lobby__divider {
   display: flex;
+  align-items: center;
   gap: 12px;
-  margin-top: 4px;
+  color: var(--ink-faint);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
 }
 
-.lobby__actions .btn {
+.lobby__divider::before,
+.lobby__divider::after {
+  content: "";
   flex: 1;
+  height: 0;
+  border-top: 1.5px dashed var(--line);
+}
+
+.lobby__join {
+  display: flex;
+  gap: 10px;
+}
+
+.lobby__join .field__input {
+  flex: 1;
+  text-transform: uppercase;
+}
+
+.lobby__join .btn {
+  flex: none;
 }
 
 .lobby__error {

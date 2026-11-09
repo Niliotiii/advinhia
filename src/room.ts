@@ -108,24 +108,50 @@ function enterRoom(code: string, name: string): void {
 }
 
 // ---- Lobby actions ----
-function startJoin(code: string): void {
+/** Validate the name, persist it, and return it — or null (with an error shown). */
+function requireName(): string | null {
   const name = nameInput.value.trim();
-  if (!name) return showError("Digite seu nome.");
-  const clean = code.trim().toUpperCase();
-  if (!/^[A-Z0-9_-]{1,32}$/.test(clean)) return showError("Código inválido.");
-  // Persist name for convenience.
+  if (!name) {
+    showError("Digite seu nome.");
+    nameInput.focus();
+    return null;
+  }
   try {
     localStorage.setItem("adivinhia.name", name);
   } catch {
     /* ignore */
   }
+  return name;
+}
+
+/** Create a brand-new room: only the name is needed, the code is generated. */
+function createRoom(): void {
+  const name = requireName();
+  if (!name) return;
+  enterRoom(randomCode(), name);
+}
+
+/** Join an existing room by its code. */
+function joinRoom(): void {
+  const name = requireName();
+  if (!name) return;
+  const clean = codeInput.value.trim().toUpperCase();
+  if (!clean) {
+    showError("Digite o código da sala para entrar.");
+    codeInput.focus();
+    return;
+  }
+  if (!/^[A-Z0-9_-]{1,32}$/.test(clean)) {
+    showError("Código inválido.");
+    return;
+  }
   enterRoom(clean, name);
 }
 
-joinBtn.addEventListener("click", () => startJoin(codeInput.value));
-createBtn.addEventListener("click", () => startJoin(randomCode()));
+joinBtn.addEventListener("click", joinRoom);
+createBtn.addEventListener("click", createRoom);
 codeInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") startJoin(codeInput.value);
+  if (e.key === "Enter") joinRoom();
 });
 
 clearBtn.addEventListener("click", () => {
