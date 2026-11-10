@@ -264,6 +264,11 @@
 }
 
 /* ---- Game: host panel, players, round bar ---- */
+.room__bar {
+  flex-wrap: wrap;
+  row-gap: 10px;
+}
+
 .room__bar .btn {
   flex: none;
 }
@@ -434,6 +439,7 @@
 
 .results__total {
   font-weight: 700;
+  border-right: 1px solid var(--line);
 }
 
 .results__row--win td {
@@ -513,6 +519,14 @@
 @media (max-width: 780px) {
   .room__grid {
     grid-template-columns: 1fr;
+  }
+  /* In the waiting room the main action (start the game) must come first. */
+  .stage--waiting .side {
+    order: -1;
+  }
+  .results__table th,
+  .results__table td {
+    padding: 9px 10px;
   }
   .side {
     min-height: 0;

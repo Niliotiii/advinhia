@@ -150,7 +150,7 @@ export class RoomClient {
     this.send({ t: "drawing", round, pts });
   }
 
-  sendScores(scores: number[]): void {
+  sendScores(scores: Record<string, number[]>): void {
     this.send({ t: "scores", scores });
   }
 

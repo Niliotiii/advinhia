@@ -4,8 +4,9 @@
  * Game mode ("desenho simultâneo"): every player in the room draws the SAME
  * concepts, each with the SAME time limit. Drawings stay private while they
  * are made. When all rounds are done, the AI (running in each player's
- * browser) scores every drawing as the probability it assigns to the
- * requested concept; the total of those percentages decides the winner.
+ * browser) scores EVERY drawing as the probability it assigns to the
+ * requested concept; a drawing's score is the median of all players'
+ * evaluations (see scoring.ts) and the total decides the winner.
  *
  * Server flow:   lobby -> drawing -> between -> (drawing -> between)* ->
  *                judging -> results -> (host: playAgain) -> lobby
@@ -55,6 +56,8 @@ export interface PlayerResult {
   connected: boolean;
   /** AI percentage (integer 0..100) given to the requested concept, per round */
   scores: number[];
+  /** per round: the evaluators disagreed by more than 10 points (the median was used) */
+  disputed: boolean[];
   /** sum of `scores` */
   total: number;
 }
@@ -81,7 +84,11 @@ export type ClientMessage =
   | { t: "join"; name: string; token?: string }
   | { t: "start"; rounds: number; seconds: number }
   | { t: "drawing"; round: number; pts: DPoint[] }
-  | { t: "scores"; scores: number[] } // AI probabilities 0..1, one per round
+  /**
+   * This player's evaluation of the drawings: playerId -> AI probability (0..1)
+   * per round. An empty object means "I could not evaluate" (abstain).
+   */
+  | { t: "scores"; scores: Record<string, number[]> }
   | { t: "playAgain" }
   | { t: "stroke"; stroke: Stroke }
   | { t: "clear" }
@@ -110,7 +117,14 @@ export type ServerMessage =
     }
   | { t: "roundEnd"; round: number; nextAt: number; serverNow: number }
   | { t: "drawingAck"; round: number }
-  | { t: "judging"; deadline: number; serverNow: number; rounds: PromptRef[] }
+  | {
+      t: "judging";
+      deadline: number;
+      serverNow: number;
+      rounds: PromptRef[];
+      /** every submitted drawing: each browser scores all of them */
+      drawings: DrawingEntry[];
+    }
   | { t: "results"; results: Results; drawings: DrawingEntry[] }
   | { t: "lobby" }
   | { t: "error"; code: ErrorCode; message: string }

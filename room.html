@@ -13,6 +13,9 @@
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
+    <!-- Umami analytics (privacy-friendly) -->
+    <script defer src="https://umami.niliotiii.com.br/recorder.js" data-website-id="06896514-9229-4dbd-8fc0-adbf44fdc695"></script>
+    <script defer src="https://umami.niliotiii.com.br/script.js" data-website-id="06896514-9229-4dbd-8fc0-adbf44fdc695"></script>
   </head>
   <body>
     <main class="app">
@@ -148,7 +151,7 @@
         <!-- The AI scores every drawing (runs in each player's browser) -->
         <section id="judging-view" class="panel" hidden>
           <h2 class="panel__title">A IA está avaliando os desenhos</h2>
-          <p class="panel__text" id="judging-text">Cada navegador pergunta à IA o quanto o desenho parece com o conceito pedido.</p>
+          <p class="panel__text" id="judging-text">Cada navegador pergunta à IA o quanto cada desenho parece com o conceito pedido. A nota final é a mediana das avaliações.</p>
           <div class="spinner" aria-hidden="true"></div>
         </section>
 
@@ -162,6 +165,9 @@
           <div class="results__table-wrap">
             <table id="results-table" class="results__table"></table>
           </div>
+          <p id="results-note" class="opt__help" hidden>
+            * Os navegadores divergiram em mais de 10 pontos nesta nota. Vale a mediana das avaliações.
+          </p>
           <h3 class="side__title">Desenhos e notas da IA</h3>
           <div id="results-gallery" class="gallery"></div>
         </section>

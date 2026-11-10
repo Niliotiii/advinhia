@@ -105,13 +105,16 @@ ele é o conceito pedido. Vence quem somar mais.
   partida: jogadores, conceitos sorteados, cronômetro sincronizado (via `alarm`),
   desenhos recebidos (SQLite) e ranking. O estado é salvo antes de ser anunciado,
   então sobrevive à hibernação e a reinícios.
+- **Verificação cruzada das notas**: o servidor manda todos os desenhos a todos os
+  jogadores; cada navegador avalia **todos** com a IA local e a nota final de um
+  desenho é a **mediana** das avaliações (`src/shared/scoring.ts`). Um cliente
+  adulterado não consegue inflar a própria nota nem derrubar a de outro com 3 ou
+  mais jogadores. Com 2 jogadores não há desempate (vale a média), e diferenças
+  acima de 10 pontos aparecem marcadas com `*` no resultado.
 - **Reconexão**: cada jogador tem um token por aba; quem cai volta com a mesma
-  identidade e o mesmo cronômetro.
+  identidade e o mesmo cronômetro, e o cliente reconecta sozinho.
 - **Justiça**: pincel fixo (14px) para todos, e uma rodada sem desenho vale 0%
-  mesmo que o cliente envie outra nota.
-- **Limite conhecido**: as notas da IA são calculadas no navegador de cada
-  jogador, então um cliente adulterado poderia enviar notas falsas. O servidor
-  guarda os desenhos, o que permite evoluir para uma verificação cruzada.
+  mesmo que alguém envie outra nota.
 
 ### Testes
 
@@ -119,11 +122,14 @@ Os testes ficam em `tests/` e precisam do servidor local (`npx wrangler dev --po
 depois de `npm run build`) e, os de navegador, de um Chrome com
 `--remote-debugging-port`. Cada arquivo tem as instruções no cabeçalho:
 
-- `tests/game-flow.cjs`: fluxo do servidor (2 jogadores simulados).
+- `tests/aggregate.mjs`: regra da mediana (sem servidor: `node --experimental-strip-types tests/aggregate.mjs`).
+- `tests/game-flow.cjs`: fluxo do servidor com 3 jogadores, um deles trapaceiro.
 - `tests/mp-ui.cjs`: partida completa com 2 abas reais e a IA de verdade.
+- `tests/mobile.cjs`: celular emulado (390px), desenho com toque e layout.
 - `tests/scoring.cjs`: a nota de um desenho reproduzido bate com a do desenho ao vivo.
+- `tests/load-8.cjs`: sala cheia (8 jogadores) com desenhos no limite de tamanho.
 
 ## Próximos passos possíveis
 
-- Verificação cruzada das notas (todos os navegadores avaliam todos os desenhos).
+- Botão "terminei" para encerrar um desenho antes do tempo quando todos acabarem.
 - Níveis de dificuldade (curar as 345 classes por facilidade de desenho).

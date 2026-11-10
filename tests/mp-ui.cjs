@@ -142,7 +142,8 @@ async function main() {
   const rows = table.slice(1);
   console.log("    ranking:", JSON.stringify(rows));
   assert(rows.length === 2, "2 jogadores no ranking");
-  const parsed = rows.map((r) => ({ name: r[1].replace(" (você)", ""), pcts: r.slice(2, 5).map((s) => parseInt(s, 10)), total: parseInt(r[5], 10), raw: r.slice(2, 5) }));
+  assert(!rows.flat().some((c) => c.includes("*")) && !(await A.vis("#results-note")), "os dois navegadores avaliaram igual: nenhuma nota marcada como divergente");
+  const parsed = rows.map((r) => ({ name: r[1].replace(" (você)", ""), pcts: r.slice(3, 6).map((s) => parseInt(s, 10)), total: parseInt(r[2], 10), raw: r.slice(3, 6) }));
   assert(parsed.every((p) => p.raw.every((s) => /^\d+%$/.test(s)) && p.pcts.every((n) => n >= 0 && n <= 100)), "notas são porcentagens inteiras de 0 a 100");
   assert(parsed.every((p) => p.total === p.pcts.reduce((a, b) => a + b, 0)), "total = soma das notas");
   assert(parsed[0].total >= parsed[1].total, "ranking em ordem decrescente");

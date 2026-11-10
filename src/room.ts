@@ -70,6 +70,7 @@ const resultsView = $("#results-view");
 const resultsTitle = $("#results-title");
 const resultsTable = $("#results-table");
 const resultsGallery = $("#results-gallery");
+const resultsNote = $("#results-note");
 const againBtn = $<HTMLButtonElement>("#again-btn");
 const againNote = $("#again-note");
 
@@ -108,7 +109,7 @@ let currentPts: DPoint[] = [];
 let myDrawings: DPoint[][] = [];
 const submitted = new Set<number>();
 const acked = new Set<number>();
-let computedScores: number[] | null = null;
+let computedScores: Record<string, number[]> | null = null;
 let ticker: number | null = null;
 
 const serverNow = (): number => Date.now() + clockOffset;
@@ -214,6 +215,7 @@ function showPhase(p: Phase): void {
   resultsView.hidden = p !== "results";
   playBar.hidden = !(p === "drawing" || p === "between");
   warmupNote.hidden = p !== "lobby";
+  stage.classList.toggle("stage--waiting", p === "lobby");
   boardFrame.classList.toggle("board-frame--locked", p === "between");
   // Shared warm-up in the lobby; private and time-locked while playing.
   board?.setEnabled(p === "lobby" || (p === "drawing" && serverNow() < roundEndsAt));
@@ -281,35 +283,48 @@ function tick(): void {
   }
 }
 
-// ---- Judging: the local AI scores this player's own drawings ----
-async function evaluate(rounds: PromptRef[]): Promise<void> {
+// ---- Judging: the local AI scores EVERY drawing (cross-verification) ----
+// The server keeps the median of everyone's evaluations, so no single browser
+// decides a score. Each drawing is replayed from the server's copy, which is
+// the same data for all evaluators.
+async function evaluate(rounds: PromptRef[], drawings: DrawingEntry[]): Promise<void> {
   if (computedScores) {
     client?.sendScores(computedScores); // re-send after a reconnect; the server ignores repeats
     return;
   }
-  let scores: number[];
+  const out: Record<string, number[]> = {};
   try {
     const rec = await getRecognizer();
     const off = document.createElement("canvas");
     off.width = BOARD_PX;
     off.height = BOARD_PX;
-    scores = rounds.map((r, i) => {
-      const pts = myDrawings[i];
-      if (!pts || pts.length === 0) return 0;
-      renderDrawing(off, pts, GAME_BRUSH_PX);
-      return rec.scoreFor(off, r.label);
-    });
+    let done = 0;
+    for (const d of drawings) {
+      const concept = rounds[d.round];
+      if (!concept) continue;
+      renderDrawing(off, d.pts, GAME_BRUSH_PX);
+      (out[d.playerId] ??= rounds.map(() => 0))[d.round] = rec.scoreFor(off, concept.label);
+      // Let the page breathe so the spinner keeps moving on long games.
+      if (++done % 8 === 0) await new Promise((r) => setTimeout(r, 0));
+    }
   } catch (err) {
+    // Abstain (empty report) instead of voting zeros: a browser that cannot run
+    // the AI must not drag down other people's scores.
     console.error(err);
     judgingText.textContent =
-      "Não foi possível carregar a IA neste navegador. Seus desenhos contam 0%.";
-    scores = rounds.map(() => 0);
+      "Não foi possível carregar a IA neste navegador. As notas virão dos outros jogadores.";
+    for (const k of Object.keys(out)) delete out[k];
   }
-  computedScores = scores;
-  client?.sendScores(scores);
+  computedScores = out;
+  client?.sendScores(out);
 }
 
 // ---- Results ----
+/** "62%", with a trailing * when the players' browsers disagreed on this score. */
+function pctLabel(score: number, disputed?: boolean): string {
+  return `${score}%${disputed ? "*" : ""}`;
+}
+
 function renderResults(res: Results, drawings: DrawingEntry[]): void {
   const label = (id: string): string => (id === selfId ? "Você" : (res.players.find((p) => p.id === id)?.name ?? "?"));
 
@@ -323,24 +338,29 @@ function renderResults(res: Results, drawings: DrawingEntry[]): void {
   }
 
   const ranked = [...res.players].sort((a, b) => b.total - a.total);
+  resultsNote.hidden = !res.players.some((p) => p.disputed?.some(Boolean));
 
   // Ranking table
   const head = el("tr");
-  head.append(el("th", "", "#"), el("th", "", "Jogador"));
+  // Total sits right after the name so it is always visible; the per-drawing
+  // columns can scroll sideways on narrow screens.
+  head.append(el("th", "", "#"), el("th", "", "Jogador"), el("th", "results__num", "Total"));
   res.rounds.forEach((r, i) => {
     const th = el("th", "results__num", `${i + 1}`);
     th.title = r.pt;
     head.append(th);
   });
-  head.append(el("th", "results__num", "Total"));
   const rows = ranked.map((p, i) => {
     const tr = el(
       "tr",
       (res.winners.includes(p.id) ? "results__row--win " : "") + (p.id === selfId ? "results__row--me" : ""),
     );
-    tr.append(el("td", "", `${i + 1}`), el("td", "", p.id === selfId ? `${p.name} (você)` : p.name));
-    for (const s of p.scores) tr.append(el("td", "results__num", `${s}%`));
-    tr.append(el("td", "results__num results__total", `${p.total}`));
+    tr.append(
+      el("td", "", `${i + 1}`),
+      el("td", "", p.id === selfId ? `${p.name} (você)` : p.name),
+      el("td", "results__num results__total", `${p.total}`),
+    );
+    p.scores.forEach((s, r) => tr.append(el("td", "results__num", pctLabel(s, p.disputed?.[r]))));
     return tr;
   });
   resultsTable.replaceChildren(head, ...rows);
@@ -367,7 +387,10 @@ function renderResults(res: Results, drawings: DrawingEntry[]): void {
         card.append(el("div", "gallery__empty", "sem desenho"));
       }
       const cap = el("figcaption", "gallery__caption");
-      cap.append(el("span", "gallery__name", p.id === selfId ? "Você" : p.name), el("strong", "", `${p.scores[i] ?? 0}%`));
+      cap.append(
+        el("span", "gallery__name", p.id === selfId ? "Você" : p.name),
+        el("strong", "", pctLabel(p.scores[i] ?? 0, p.disputed?.[i])),
+      );
       card.append(cap);
       row.append(card);
     }
@@ -450,7 +473,7 @@ function onMessage(msg: ServerMessage): void {
       clockOffset = msg.serverNow - Date.now();
       stopTicker();
       showPhase("judging");
-      void evaluate(msg.rounds);
+      void evaluate(msg.rounds, msg.drawings);
       break;
     case "results":
       stopTicker();
