@@ -4,8 +4,11 @@
 //   npm run build && npx wrangler dev --port 8787            (terminal 1)
 //   chrome --headless=new --remote-debugging-port=9222 about:blank   (terminal 2)
 //   node tests/solo.cjs 8787 9222
+// Against production instead (analytics requests are blocked so stats stay clean):
+//   node tests/solo.cjs 0 9222 https://your-domain.example
 const PORT = process.argv[2] || "8787";
 const CDP = process.argv[3];
+const BASE = (process.argv[4] || `http://localhost:${PORT}`).replace(/\/$/, "");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0;
 const assert = (c, l) => { c ? (pass++, console.log("  PASS:", l)) : (fail++, console.log("  FAIL:", l)); };
@@ -17,14 +20,15 @@ function rpc(ws, st, m, p = {}) { const id = st.id++; return new Promise((res, r
   const st = { id: 1 };
   await rpc(ws, st, "Page.enable"); await rpc(ws, st, "Runtime.enable"); await rpc(ws, st, "Network.enable");
   await rpc(ws, st, "Network.setCacheDisabled", { cacheDisabled: true });
+  await rpc(ws, st, "Network.setBlockedURLs", { urls: ["*umami*"] });
   const ev = async (e) => { const r = await rpc(ws, st, "Runtime.evaluate", { expression: e, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(r.exceptionDetails.text + (r.exceptionDetails.exception?.description || "")); return r.result?.value; };
   const waitFor = async (e, ms = 15000) => { const t = Date.now(); while (Date.now() - t < ms) { if (await ev(e)) return true; await sleep(150); } return false; };
   const click = (s) => ev(`document.querySelector(${JSON.stringify(s)}).click(); true`);
   const text = (s) => ev(`document.querySelector(${JSON.stringify(s)}).textContent.trim()`);
 
-  await rpc(ws, st, "Page.navigate", { url: `http://localhost:${PORT}/` }); await sleep(1000);
+  await rpc(ws, st, "Page.navigate", { url: `${BASE}/` }); await sleep(1000);
   await ev(`(async () => { for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister(); for (const k of await caches.keys()) await caches.delete(k); localStorage.clear(); return true; })()`);
-  await rpc(ws, st, "Page.navigate", { url: `http://localhost:${PORT}/` }); await sleep(1000);
+  await rpc(ws, st, "Page.navigate", { url: `${BASE}/` }); await sleep(1000);
 
   console.log("[1] Menu e início");
   assert((await ev(`document.querySelector('#app').dataset.view`)) === "menu", "abre no menu");
