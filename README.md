@@ -28,12 +28,21 @@ Usamos o **doodleNet** — uma CNN treinada nas **345 categorias** do dataset
 `public/model/` e são servidos como estáticos — a app é totalmente
 auto-contida, sem depender de hosts externos em runtime.
 
-Pré-processamento (espelha a normalização do QuickDraw): encontra a
-*bounding box* do traço no canvas, recorta, escala para preencher quase todo
-o frame 28×28 (centralizado, preservando proporção), inverte (`255 - v`) e
-normaliza para `[0, 1]`. Esse passo é crítico: reduzir o canvas inteiro direto
-para 28×28 deixa o traço pequeno e descentralizado, fora da distribuição de
-treino — e o modelo erra tudo.
+O que a IA recebe (`src/drawing.ts` e `src/recognizer.ts`), nessa ordem:
+
+1. **Traços vetoriais, não pixels.** O quadro grava o desenho como pontos
+   normalizados. Para a IA ele é redesenhado sempre em **preto**, com espessura
+   **proporcional ao tamanho do desenho** (6% do lado maior). Por isso o pincel e a
+   cor que o jogador vê são só visuais e não mudam o reconhecimento.
+2. **Recorte e centralização**: *bounding box* do traço, escalada para ocupar 26 dos
+   28 px, centralizada e preservando a proporção (espelha o QuickDraw).
+3. **Redução por média exata por área** até 28×28, invertida (`255 - v`) e
+   normalizada para `[0, 1]`. Um `drawImage` direto pulava traços finos.
+
+Medido em 1200 desenhos humanos reais do Quick, Draw! (`tests/benchmark.cjs`), o
+acerto top-1 entre as 345 classes foi de 38% (pixels do quadro, 14px, `drawImage`)
+para 83%. Fazer o traço fino ou grosso demais, ou reduzir o desenho sem média por
+área, é o que mais atrapalha a IA.
 
 ## Arquitetura do código
 
@@ -113,8 +122,9 @@ ele é o conceito pedido. Vence quem somar mais.
   acima de 10 pontos aparecem marcadas com `*` no resultado.
 - **Reconexão**: cada jogador tem um token por aba; quem cai volta com a mesma
   identidade e o mesmo cronômetro, e o cliente reconecta sozinho.
-- **Justiça**: pincel fixo (14px) para todos, e uma rodada sem desenho vale 0%
-  mesmo que alguém envie outra nota.
+- **Justiça**: a IA recebe todos os desenhos com a mesma espessura ideal, qualquer
+  que seja o pincel, e uma rodada sem desenho vale 0% mesmo que alguém envie outra
+  nota.
 
 ### Testes
 
@@ -126,7 +136,8 @@ depois de `npm run build`) e, os de navegador, de um Chrome com
 - `tests/game-flow.cjs`: fluxo do servidor com 3 jogadores, um deles trapaceiro.
 - `tests/mp-ui.cjs`: partida completa com 2 abas reais e a IA de verdade.
 - `tests/mobile.cjs`: celular emulado (390px), desenho com toque e layout.
-- `tests/scoring.cjs`: a nota de um desenho reproduzido bate com a do desenho ao vivo.
+- `tests/scoring.cjs`: o pincel não muda a nota da IA e o arredondamento dos pontos é inofensivo.
+- `tests/benchmark.cjs`: acerto da IA em desenhos humanos reais do Quick, Draw! (precisa de internet).
 - `tests/load-8.cjs`: sala cheia (8 jogadores) com desenhos no limite de tamanho.
 
 ## Próximos passos possíveis

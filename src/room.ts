@@ -1,7 +1,7 @@
 import "./style.css";
 import "./room.css";
 import { DrawingBoard } from "./board";
-import { renderDrawing } from "./drawing";
+import { renderDrawing, renderForAI } from "./drawing";
 import { RoomClient, type ConnStatus } from "./net";
 import { loadSettings } from "./settings";
 import { MIN_PLAYERS } from "./shared/protocol";
@@ -75,7 +75,10 @@ const againBtn = $<HTMLButtonElement>("#again-btn");
 const againNote = $("#again-note");
 
 // ---- Constants ----
-/** Fixed brush: the thickness changes what the AI sees, so everyone uses the same. */
+/**
+ * Brush shown to players. It is cosmetic: the AI is always given the drawing
+ * re-rendered with an ideal stroke width (renderForAI), so it can't affect scores.
+ */
 const GAME_BRUSH_PX = 14;
 const BOARD_PX = 420;
 /**
@@ -302,7 +305,7 @@ async function evaluate(rounds: PromptRef[], drawings: DrawingEntry[]): Promise<
     for (const d of drawings) {
       const concept = rounds[d.round];
       if (!concept) continue;
-      renderDrawing(off, d.pts, GAME_BRUSH_PX);
+      renderForAI(off, d.pts); // same ideal stroke width for every evaluator
       (out[d.playerId] ??= rounds.map(() => 0))[d.round] = rec.scoreFor(off, concept.label);
       // Let the page breathe so the spinner keeps moving on long games.
       if (++done % 8 === 0) await new Promise((r) => setTimeout(r, 0));

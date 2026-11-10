@@ -1,6 +1,7 @@
 import "./style.css";
 import { SketchRecognizer, type Prediction } from "./recognizer";
 import { DrawingBoard } from "./board";
+import { renderForAI } from "./drawing";
 import { Game, type GameSnapshot, type RoundResult } from "./game";
 import {
   BRUSH_PX,
@@ -49,6 +50,11 @@ const nameSetting = $<HTMLInputElement>("#name-setting");
 const recognizer = new SketchRecognizer();
 const board = new DrawingBoard(canvas);
 const game = new Game();
+// What the AI is shown: the board's strokes re-rendered in black with an ideal,
+// size-proportional width (the player's brush and colours are only cosmetic).
+const aiCanvas = document.createElement("canvas");
+aiCanvas.width = canvas.width;
+aiCanvas.height = canvas.height;
 let settings: Settings = loadSettings();
 
 // Tracks the current round's prompt so we can detect when a new round begins.
@@ -75,7 +81,8 @@ function stopInferenceLoop(): void {
 function runInference(): void {
   if (!recognizer.isReady() || !game.isPlaying() || !board.dirty) return;
 
-  const predictions = recognizer.predict(canvas, 5);
+  renderForAI(aiCanvas, board.getStrokes());
+  const predictions = recognizer.predict(aiCanvas, 5);
   renderGuesses(predictions);
   renderVision();
 

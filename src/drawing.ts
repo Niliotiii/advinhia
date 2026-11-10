@@ -44,3 +44,39 @@ export function renderDrawing(canvas: HTMLCanvasElement, pts: DPoint[], lineWidt
     havePrev = true;
   }
 }
+
+/**
+ * Stroke width, as a share of the drawing's longest side, used when showing a
+ * drawing to the AI. The model was trained on strokes whose thickness is
+ * proportional to the drawing; a fixed pixel width is too thin for big
+ * drawings and a blob for small ones (see tests/benchmark.cjs).
+ */
+export const AI_STROKE_RATIO = 0.06;
+/** Never thinner than this (px on a 420px board), so tiny drawings still leave ink. */
+const MIN_AI_STROKE_PX = 2;
+
+/**
+ * Render a drawing the way the AI should see it: always black on white, with a
+ * stroke width proportional to the drawing's size. The brush and colour the
+ * player used are only cosmetic and have no effect on recognition.
+ */
+export function renderForAI(
+  canvas: HTMLCanvasElement,
+  pts: DPoint[],
+  ratio: number = AI_STROKE_RATIO,
+): void {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const [nx, ny] of pts) {
+    const x = nx * canvas.width;
+    const y = ny * canvas.height;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  const longest = pts.length > 0 ? Math.max(maxX - minX, maxY - minY) : 0;
+  renderDrawing(canvas, pts, Math.max(MIN_AI_STROKE_PX, ratio * longest));
+}

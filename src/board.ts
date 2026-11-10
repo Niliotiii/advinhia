@@ -1,3 +1,7 @@
+import type { DPoint } from "./shared/protocol";
+
+const round4 = (v: number): number => Math.round(v * 10000) / 10000;
+
 /**
  * Simple drawing surface: black strokes on a white background, supporting
  * both mouse and touch. White background matters — the recognizer inverts
@@ -11,6 +15,8 @@ export class DrawingBoard {
   private lastY = 0;
   private _dirty = false;
   private enabled = true;
+  /** Everything drawn locally as normalized [x, y, penDown] points (vector form). */
+  private strokes: DPoint[] = [];
   private onStrokeEnd?: () => void;
   private onSegment?: (nx: number, ny: number, isStart: boolean) => void;
 
@@ -58,6 +64,15 @@ export class DrawingBoard {
     if (!on) this.drawing = false;
   }
 
+  /**
+   * The local drawing as vector points. This, not the pixels, is what the AI is
+   * shown (re-rendered with an ideal stroke width), so the brush size and colour
+   * the player sees never affect recognition.
+   */
+  getStrokes(): DPoint[] {
+    return this.strokes;
+  }
+
   /** True if anything has been drawn since the last clear. */
   get dirty(): boolean {
     return this._dirty;
@@ -71,6 +86,7 @@ export class DrawingBoard {
     this.ctx.fillStyle = "#fff";
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     this._dirty = false;
+    this.strokes = [];
     this.remoteLast?.clear();
   }
 
@@ -92,6 +108,7 @@ export class DrawingBoard {
     this.ctx.fillStyle = "#111";
     this.ctx.fill();
     this._dirty = true;
+    this.strokes.push([round4(x / this.canvas.width), round4(y / this.canvas.height), 1]);
     this.onSegment?.(x / this.canvas.width, y / this.canvas.height, true);
   }
 
@@ -104,6 +121,10 @@ export class DrawingBoard {
     this.lastX = x;
     this.lastY = y;
     this._dirty = true;
+    const nx = round4(x / this.canvas.width);
+    const ny = round4(y / this.canvas.height);
+    const last = this.strokes[this.strokes.length - 1];
+    if (!last || last[0] !== nx || last[1] !== ny) this.strokes.push([nx, ny, 0]);
     this.onSegment?.(x / this.canvas.width, y / this.canvas.height, false);
   }
 
