@@ -70,6 +70,25 @@ const PAGE_CODE = `(async () => {
   out.unknownLabel = score(L.pts, 'not_a_class');
   rec.reset(); const before = rec.predict(ai, 3)[0]; rec.scoreFor(ai, 'ladder'); rec.reset();
   out.predictStillWorks = !!before;
+
+  // 4) Synonyms: the score adds up the accepted classes; the game accepts them together.
+  renderForAI(ai, L.pts);
+  const sLadder = rec.scoreFor(ai, 'ladder'), sStairs = rec.scoreFor(ai, 'stairs'), both = rec.scoreFor(ai, ['ladder', 'stairs']);
+  out.syn = { sLadder, sStairs, both, expected: Math.min(1, sLadder + sStairs) };
+  const { Game } = await import('/src/game.ts');
+  const { PROMPTS } = await import('/src/shared/prompts.ts');
+  const play = (conceptLabel, guesses) => {
+    const g = new Game(); g.configure({ rounds: 3, seconds: 20, difficulty: 'normal', hints: true, brush: 'medium' });
+    g.prompt = PROMPTS.find((p) => p.label === conceptLabel); g.phase = 'playing'; // private fields: set directly for the test
+    return [1, 2, 3].map(() => g.submitGuesses(guesses));
+  };
+  const cupGuesses = [{ label: 'mug', probability: 0.45 }, { label: 'cup', probability: 0.25 }, { label: 'coffee_cup', probability: 0.1 }, { label: 'bowl', probability: 0.05 }, { label: 'x', probability: 0.02 }];
+  out.game = {
+    cupSynonyms: play('cup', cupGuesses),                 // 0.45+0.25+0.10 = 0.80 >= 0.65, top is a synonym -> wins on the 3rd reading
+    otherConcept: play('apple', cupGuesses),              // same guesses mean nothing for 'apple'
+    belowThreshold: play('cup', [{ label: 'mug', probability: 0.3 }, { label: 'cup', probability: 0.1 }, { label: 'bowl', probability: 0.3 }]), // 0.40 < 0.65
+    topNotSynonym: play('cup', [{ label: 'bowl', probability: 0.4 }, { label: 'mug', probability: 0.3 }, { label: 'cup', probability: 0.3 }]), // top guess is not an accepted class
+  };
   return JSON.stringify(out);
 })()`;
 
@@ -98,6 +117,11 @@ const PAGE_CODE = `(async () => {
   assert(o.blank === 0, "quadro em branco vale 0");
   assert(o.unknownLabel === 0, "rótulo desconhecido vale 0");
   assert(o.predictStillWorks, "scoreFor não interfere no palpite ao vivo (predict continua funcionando)");
+  assert(Math.abs(o.syn.both - o.syn.expected) < 1e-6 && o.syn.both >= o.syn.sLadder, `nota de sinônimos = soma das classes (${pct(o.syn.sLadder)} + ${pct(o.syn.sStairs)} = ${pct(o.syn.both)})`);
+  assert(JSON.stringify(o.game.cupSynonyms) === "[false,false,true]", "xícara: 'caneca' no topo + soma de 80% vence na 3ª leitura seguida");
+  assert(!o.game.otherConcept.includes(true), "os mesmos palpites não valem para outro conceito (maçã)");
+  assert(!o.game.belowThreshold.includes(true), "soma abaixo do limiar (40% < 65%) não vence");
+  assert(!o.game.topNotSynonym.includes(true), "se o palpite principal não é uma classe aceita, não vence");
   console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);
 })().catch((e) => { console.error("ERR", e); process.exit(2); });

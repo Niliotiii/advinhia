@@ -3,6 +3,7 @@ import { SketchRecognizer, type Prediction } from "./recognizer";
 import { DrawingBoard } from "./board";
 import { renderForAI } from "./drawing";
 import { mountTools } from "./tools";
+import { acceptedLabels } from "./shared/prompts";
 import { Game, type GameSnapshot, type RoundResult } from "./game";
 import {
   BRUSH_INDEX,
@@ -148,11 +149,11 @@ function celebrate(): void {
 
 // ---- Rendering ----
 function renderGuesses(predictions: Prediction[]): void {
-  const target = game.currentPrompt?.label;
+  const accepted = game.currentPrompt ? acceptedLabels(game.currentPrompt.label) : [];
   guessesEl.innerHTML = predictions
     .map((p) => {
       const pct = Math.round(p.probability * 100);
-      const hit = p.label === target ? " guess--hit" : "";
+      const hit = accepted.includes(p.label) ? " guess--hit" : "";
       return `
         <li class="guess${hit}">
           <span class="guess__label">${formatLabel(p.label)}</span>

@@ -1,4 +1,4 @@
-import { PROMPTS, type Prompt } from "./shared/prompts";
+import { PROMPTS, acceptedLabels, type Prompt } from "./shared/prompts";
 import {
   CONFIDENCE_BY_DIFFICULTY,
   DEFAULT_SETTINGS,
@@ -215,9 +215,14 @@ export class Game {
   submitGuesses(guesses: { label: string; probability: number }[]): boolean {
     if (this.phase !== "playing" || !this.prompt) return false;
     const top = guesses[0];
+    // Synonyms (e.g. cup / mug / coffee cup) count together: the top guess must be
+    // one of them and their combined probability must reach the threshold.
+    const accepted = acceptedLabels(this.prompt.label);
+    const combined = guesses
+      .filter((g) => accepted.includes(g.label))
+      .reduce((sum, g) => sum + g.probability, 0);
     const confident =
-      top?.label === this.prompt.label &&
-      top.probability >= this.confidenceThreshold;
+      !!top && accepted.includes(top.label) && combined >= this.confidenceThreshold;
 
     if (confident) {
       this.streak += 1;

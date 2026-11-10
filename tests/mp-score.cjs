@@ -16,7 +16,7 @@ function rpc(ws, st, m, p = {}) { const id = st.id++; return new Promise((res, r
 
 // A real human drawing of `label`, scaled to fill 80% of the board, as [x, y, penDown] points.
 async function humanDrawing(label) {
-  const r = await fetch(`https://storage.googleapis.com/quickdraw_dataset/full/simplified/${label}.ndjson`, { headers: { Range: "bytes=0-600000" } });
+  const r = await fetch(`https://storage.googleapis.com/quickdraw_dataset/full/simplified/${encodeURIComponent(label.replace(/_/g, " "))}.ndjson`, { headers: { Range: "bytes=0-600000" } });
   const lines = (await r.text()).split("\n").slice(0, -1);
   for (const l of lines) {
     let o; try { o = JSON.parse(l); } catch { continue; }

@@ -44,6 +44,15 @@ acerto top-1 entre as 345 classes foi de 38% (pixels do quadro, 14px, `drawImage
 para 83%. Fazer o traço fino ou grosso demais, ou reduzir o desenho sem média por
 área, é o que mais atrapalha a IA.
 
+## Conceitos do jogo
+
+Os conceitos sorteados (`src/shared/prompts.ts`) foram escolhidos pelo acerto **medido**
+da IA com desenhos humanos reais do Quick, Draw!, não por palpite: ficaram de fora
+os que o modelo reconhece mal (cachorro, lápis e cobra, de 33% a 46% de acerto) e entraram
+outros com 86% a 98%. Alguns conceitos têm **sinônimos** (`also`): o modelo tem as classes
+`cup`, `mug` e `coffee_cup`, e quem desenha uma xícara não tem como saber qual delas a IA
+prefere, então as três valem e suas probabilidades são somadas.
+
 ## Arquitetura do código
 
 ```
@@ -51,7 +60,7 @@ src/
   recognizer.ts  — carrega o modelo TF.js e roda inferência (top-K)
   board.ts       — quadro de desenho (mouse + touch)
   game.ts        — máquina de estados: rodadas, timer, pontuação por velocidade
-  shared/prompts.ts — subconjunto curado das 345 classes (rótulo EN p/ match + PT p/ exibir)
+  shared/prompts.ts — conceitos do jogo, curados pelo acerto medido da IA (rótulo EN p/ match + PT p/ exibir, + sinônimos)
   main.ts        — fiação da UI + loop de inferência (debounce ~250ms)
   style.css      — estilos
 public/
@@ -142,6 +151,7 @@ depois de `npm run build`) e, os de navegador, de um Chrome com
 - `tests/mobile.cjs`: celular emulado (390px), desenho com toque e layout.
 - `tests/scoring.cjs`: o pincel não muda a nota da IA e o arredondamento dos pontos é inofensivo.
 - `tests/benchmark.cjs`: acerto da IA em desenhos humanos reais do Quick, Draw! (precisa de internet).
+- `tests/concepts.mjs`: integridade da lista de conceitos e dos sinônimos (sem servidor: `node --experimental-strip-types tests/concepts.mjs`).
 - `tests/load-8.cjs`: sala cheia (8 jogadores) com desenhos no limite de tamanho.
 
 ## Próximos passos possíveis

@@ -2,6 +2,7 @@ import "./style.css";
 import "./room.css";
 import { DrawingBoard } from "./board";
 import { renderForAI, renderStyled } from "./drawing";
+import { acceptedLabels } from "./shared/prompts";
 import { mountTools, type Tools } from "./tools";
 import { RoomClient, type ConnStatus } from "./net";
 import { loadSettings } from "./settings";
@@ -282,7 +283,7 @@ async function evaluate(rounds: PromptRef[], drawings: DrawingEntry[]): Promise<
       const concept = rounds[d.round];
       if (!concept) continue;
       renderForAI(off, d.pts); // same ideal stroke width for every evaluator
-      (out[d.playerId] ??= rounds.map(() => 0))[d.round] = rec.scoreFor(off, concept.label);
+      (out[d.playerId] ??= rounds.map(() => 0))[d.round] = rec.scoreFor(off, acceptedLabels(concept.label));
       // Let the page breathe so the spinner keeps moving on long games.
       if (++done % 8 === 0) await new Promise((r) => setTimeout(r, 0));
     }

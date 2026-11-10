@@ -150,14 +150,17 @@ export class SketchRecognizer {
   }
 
   /**
-   * Probability (0..1) the model assigns to ONE specific concept for a
-   * finished drawing. Unlike predict() it does not use the smoothing history,
-   * so it judges exactly this image. A blank canvas scores 0.
+   * Probability (0..1) the model assigns to a concept for a finished drawing.
+   * Pass several labels when the concept has synonyms (see Prompt.also): their
+   * probabilities are added. Unlike predict() it does not use the smoothing
+   * history, so it judges exactly this image. A blank canvas scores 0.
    */
-  scoreFor(source: HTMLCanvasElement, label: string): number {
+  scoreFor(source: HTMLCanvasElement, labels: string | string[]): number {
     if (!this.model) throw new Error("Model not loaded");
-    const idx = this.classNames.indexOf(label);
-    if (idx < 0) return 0;
+    const idxs = (Array.isArray(labels) ? labels : [labels])
+      .map((l) => this.classNames.indexOf(l))
+      .filter((i) => i >= 0);
+    if (idxs.length === 0) return 0;
     const input = this.preprocess(source);
     if (!input) return 0;
 
@@ -166,7 +169,7 @@ export class SketchRecognizer {
       const output = this.model!.predict(tensor) as tf.Tensor;
       return output.dataSync() as Float32Array;
     });
-    return probs[idx] ?? 0;
+    return Math.min(1, idxs.reduce((sum, i) => sum + (probs[i] ?? 0), 0));
   }
 
   /**
