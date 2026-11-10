@@ -1,11 +1,16 @@
+import { renderStyled } from "./drawing";
 import type { DPoint } from "./shared/protocol";
+import { BRUSH_WIDTHS, DEFAULT_COLOR, DEFAULT_WIDTH, PALETTE } from "./shared/style";
 
 const round4 = (v: number): number => Math.round(v * 10000) / 10000;
 
 /**
- * Simple drawing surface: black strokes on a white background, supporting
- * both mouse and touch. White background matters — the recognizer inverts
- * the image, so "empty" must be white (which becomes 0 after inversion).
+ * Drawing surface (mouse + touch) on a white background.
+ *
+ * Everything drawn is also recorded as vector points with the stroke's colour
+ * and width. That record is what gets submitted in multiplayer, redrawn by
+ * undo, and shown to the AI — which always re-renders it in black with an ideal
+ * width, so the colours and brush sizes chosen here are purely cosmetic.
  */
 export class DrawingBoard {
   private readonly canvas: HTMLCanvasElement;
@@ -15,10 +20,14 @@ export class DrawingBoard {
   private lastY = 0;
   private _dirty = false;
   private enabled = true;
-  /** Everything drawn locally as normalized [x, y, penDown] points (vector form). */
+  private color = DEFAULT_COLOR;
+  private width = DEFAULT_WIDTH;
+  /** Everything drawn locally as normalized points (see DPoint). */
   private strokes: DPoint[] = [];
+  private maxPoints = Infinity;
+  private onLimit?: () => void;
   private onStrokeEnd?: () => void;
-  private onSegment?: (nx: number, ny: number, isStart: boolean) => void;
+  private onSegment?: (nx: number, ny: number, isStart: boolean, color?: number, width?: number) => void;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -28,8 +37,7 @@ export class DrawingBoard {
 
     this.ctx.lineJoin = "round";
     this.ctx.lineCap = "round";
-    this.ctx.lineWidth = 14;
-    this.ctx.strokeStyle = "#111";
+    this.applyStyle();
 
     this.clear();
     this.attachEvents();
@@ -43,16 +51,40 @@ export class DrawingBoard {
   /**
    * Register a callback fired for each local drawing step with NORMALIZED
    * coordinates (0..1). `isStart` marks the first point of a new stroke (pen
-   * down), so remote peers know not to connect it to the previous point.
-   * Used to stream the drawing to other players.
+   * down); only then are the colour/width indices passed. Used to stream the
+   * drawing to other players.
    */
-  setOnSegment(cb: (nx: number, ny: number, isStart: boolean) => void): void {
+  setOnSegment(
+    cb: (nx: number, ny: number, isStart: boolean, color?: number, width?: number) => void,
+  ): void {
     this.onSegment = cb;
   }
 
-  /** Set the pen width in canvas pixels (applies to local and remote strokes). */
-  setBrushSize(px: number): void {
-    this.ctx.lineWidth = px;
+  /** Choose the colour and/or width (indices into style.ts) of the NEXT strokes. */
+  setStyle(style: { color?: number; width?: number }): void {
+    if (style.color !== undefined && PALETTE[style.color]) this.color = style.color;
+    if (style.width !== undefined && BRUSH_WIDTHS[style.width]) this.width = style.width;
+    this.applyStyle();
+  }
+
+  getStyle(): { color: number; width: number } {
+    return { color: this.color, width: this.width };
+  }
+
+  private applyStyle(): void {
+    const hex = PALETTE[this.color].hex;
+    this.ctx.strokeStyle = hex;
+    this.ctx.fillStyle = hex;
+    this.ctx.lineWidth = BRUSH_WIDTHS[this.width];
+  }
+
+  /**
+   * Cap on recorded points. Once reached, no more ink is accepted and `onReached`
+   * fires, so what is on screen always matches what gets submitted.
+   */
+  setPointLimit(max: number, onReached?: () => void): void {
+    this.maxPoints = max;
+    this.onLimit = onReached;
   }
 
   /**
@@ -64,11 +96,7 @@ export class DrawingBoard {
     if (!on) this.drawing = false;
   }
 
-  /**
-   * The local drawing as vector points. This, not the pixels, is what the AI is
-   * shown (re-rendered with an ideal stroke width), so the brush size and colour
-   * the player sees never affect recognition.
-   */
+  /** The local drawing as vector points (live array: copy it before keeping it). */
   getStrokes(): DPoint[] {
     return this.strokes;
   }
@@ -85,9 +113,23 @@ export class DrawingBoard {
   clear(): void {
     this.ctx.fillStyle = "#fff";
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    this.applyStyle();
     this._dirty = false;
     this.strokes = [];
-    this.remoteLast?.clear();
+    this.remote?.clear();
+  }
+
+  /** Remove the last stroke and repaint. Returns false if there was nothing to undo. */
+  undo(): boolean {
+    if (this.strokes.length === 0) return false;
+    let i = this.strokes.length - 1;
+    while (i > 0 && this.strokes[i][2] !== 1) i--;
+    this.strokes.length = i; // drop from the last pen-down point to the end
+    this.drawing = false;
+    renderStyled(this.canvas, this.strokes);
+    this.applyStyle();
+    this._dirty = this.strokes.length > 0;
+    return true;
   }
 
   private pos(e: MouseEvent | Touch): [number, number] {
@@ -97,23 +139,36 @@ export class DrawingBoard {
     return [(e.clientX - rect.left) * scaleX, (e.clientY - rect.top) * scaleY];
   }
 
+  private atLimit(): boolean {
+    if (this.strokes.length < this.maxPoints) return false;
+    this.drawing = false;
+    this.onLimit?.();
+    return true;
+  }
+
   private start(x: number, y: number): void {
-    if (!this.enabled) return;
+    if (!this.enabled || this.atLimit()) return;
     this.drawing = true;
     this.lastX = x;
     this.lastY = y;
+    this.applyStyle();
     // Draw a dot so single taps register.
     this.ctx.beginPath();
     this.ctx.arc(x, y, this.ctx.lineWidth / 2, 0, Math.PI * 2);
-    this.ctx.fillStyle = "#111";
     this.ctx.fill();
     this._dirty = true;
-    this.strokes.push([round4(x / this.canvas.width), round4(y / this.canvas.height), 1]);
-    this.onSegment?.(x / this.canvas.width, y / this.canvas.height, true);
+    this.strokes.push([
+      round4(x / this.canvas.width),
+      round4(y / this.canvas.height),
+      1,
+      this.color,
+      this.width,
+    ]);
+    this.onSegment?.(x / this.canvas.width, y / this.canvas.height, true, this.color, this.width);
   }
 
   private move(x: number, y: number): void {
-    if (!this.drawing) return;
+    if (!this.drawing || this.atLimit()) return;
     this.ctx.beginPath();
     this.ctx.moveTo(this.lastX, this.lastY);
     this.ctx.lineTo(x, y);
@@ -128,37 +183,51 @@ export class DrawingBoard {
     this.onSegment?.(x / this.canvas.width, y / this.canvas.height, false);
   }
 
-  // Remote pen position per peer id (normalized → pixels tracked here).
-  private remoteLast = new Map<string, { x: number; y: number }>();
+  // Remote pens (other players' warm-up strokes in the lobby), one per peer id.
+  private remote = new Map<string, { x: number; y: number; color: number; width: number }>();
 
   /**
    * Render a drawing step received from another player. Coordinates are
-   * normalized (0..1). `isStart` begins a new stroke (pen down).
+   * normalized (0..1). `isStart` begins a new stroke (pen down) with the given
+   * colour/width indices; remote strokes never touch the local pen settings.
    */
-  drawRemoteSegment(peerId: string, nx: number, ny: number, isStart: boolean): void {
+  drawRemoteSegment(
+    peerId: string,
+    nx: number,
+    ny: number,
+    isStart: boolean,
+    color?: number,
+    width?: number,
+  ): void {
     const x = nx * this.canvas.width;
     const y = ny * this.canvas.height;
-    if (isStart || !this.remoteLast.has(peerId)) {
-      this.ctx.beginPath();
-      this.ctx.arc(x, y, this.ctx.lineWidth / 2, 0, Math.PI * 2);
-      this.ctx.fillStyle = "#111";
+    const prev = this.remote.get(peerId);
+    const fresh = isStart || !prev;
+    const c = fresh ? (color !== undefined && PALETTE[color] ? color : DEFAULT_COLOR) : prev.color;
+    const w = fresh ? (width !== undefined && BRUSH_WIDTHS[width] ? width : DEFAULT_WIDTH) : prev.width;
+
+    this.ctx.save();
+    this.ctx.strokeStyle = PALETTE[c].hex;
+    this.ctx.fillStyle = PALETTE[c].hex;
+    this.ctx.lineWidth = BRUSH_WIDTHS[w];
+    this.ctx.beginPath();
+    if (fresh) {
+      this.ctx.arc(x, y, BRUSH_WIDTHS[w] / 2, 0, Math.PI * 2);
       this.ctx.fill();
     } else {
-      const prev = this.remoteLast.get(peerId)!;
-      this.ctx.beginPath();
       this.ctx.moveTo(prev.x, prev.y);
       this.ctx.lineTo(x, y);
-      this.ctx.strokeStyle = "#111";
       this.ctx.stroke();
     }
-    this.remoteLast.set(peerId, { x, y });
+    this.ctx.restore();
+    this.remote.set(peerId, { x, y, color: c, width: w });
     this._dirty = true;
   }
 
   /** Forget a remote peer's pen state (e.g. on clear or disconnect). */
   resetRemote(peerId?: string): void {
-    if (peerId) this.remoteLast.delete(peerId);
-    else this.remoteLast.clear();
+    if (peerId) this.remote.delete(peerId);
+    else this.remote.clear();
   }
 
   private end(): void {

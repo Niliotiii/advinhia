@@ -116,8 +116,8 @@ export class RoomClient {
   // ---- lobby warm-up (live relay) ----
 
   /** Queue a drawn point; flushed in a batch shortly after. */
-  sendPoint(x: number, y: number, isStart: boolean): void {
-    this.strokeBuf.push({ x, y, s: isStart || undefined });
+  sendPoint(x: number, y: number, isStart: boolean, color?: number, width?: number): void {
+    this.strokeBuf.push(isStart ? { x, y, s: true, c: color, w: width } : { x, y });
     if (this.flushTimer === null) {
       this.flushTimer = window.setTimeout(() => this.flushStroke(), RoomClient.FLUSH_MS);
     }

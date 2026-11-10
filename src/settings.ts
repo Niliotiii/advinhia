@@ -36,11 +36,11 @@ export const CONFIDENCE_BY_DIFFICULTY: Record<Difficulty, number> = {
   hard: 0.8,
 };
 
-/** Brush width in canvas pixels (canvas is 420x420). */
-export const BRUSH_PX: Record<Brush, number> = {
-  thin: 10,
-  medium: 14,
-  thick: 20,
+/** Starting brush width, as an index into BRUSH_WIDTHS (style.ts): 10px, 14px, 20px. */
+export const BRUSH_INDEX: Record<Brush, number> = {
+  thin: 1,
+  medium: 2,
+  thick: 3,
 };
 
 const SETTINGS_KEY = "adivinhia.settings";

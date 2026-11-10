@@ -21,6 +21,7 @@ import {
 } from "../shared/protocol";
 import { PROMPTS } from "../shared/prompts";
 import { aggregateDrawing } from "../shared/scoring";
+import { BRUSH_WIDTHS, PALETTE } from "../shared/style";
 
 export interface Env {
   GAME_ROOM: DurableObjectNamespace<GameRoom>;
@@ -647,9 +648,18 @@ function sanitizePoints(input: unknown): DPoint[] | null {
     if (!Number.isFinite(p[0]) || !Number.isFinite(p[1])) continue;
     const x = Math.round(Math.min(1, Math.max(0, p[0])) * 10000) / 10000;
     const y = Math.round(Math.min(1, Math.max(0, p[1])) * 10000) / 10000;
-    out.push([x, y, p[2] ? 1 : 0]);
+    // The optional style (pen-down points only) is kept just when it is a valid index.
+    if (p[2] && isIndex(p[3], PALETTE.length) && isIndex(p[4], BRUSH_WIDTHS.length)) {
+      out.push([x, y, 1, p[3], p[4]]);
+    } else {
+      out.push([x, y, p[2] ? 1 : 0]);
+    }
   }
   return out.length > 0 ? out : null;
+}
+
+function isIndex(v: unknown, size: number): v is number {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0 && v < size;
 }
 
 function sanitize(input: unknown, maxLen: number): string {

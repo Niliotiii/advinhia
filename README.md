@@ -97,6 +97,10 @@ npm run deploy       # build + wrangler deploy
   palpites estáveis em vez de "tremer" frame a frame.
 - **Visão da IA**: mini-canvas 28×28 mostrando exatamente a entrada que o
   modelo recebe.
+- **Ferramentas de desenho**: 8 cores, 5 espessuras e *desfazer* (botão ou
+  Ctrl/Cmd+Z). São só visuais: a IA sempre recebe o desenho redesenhado em preto
+  com a espessura ideal. No multiplayer a galeria final mostra cada desenho com as
+  cores que o jogador escolheu.
 - **Dicas progressivas**: letras do nome são reveladas conforme o tempo passa.
 - **Recorde local** persistido via `localStorage`.
 - **Efeito de acerto** (confete) quando a IA crava o desenho.

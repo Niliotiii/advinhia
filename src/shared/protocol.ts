@@ -34,15 +34,22 @@ export interface Point {
   y: number; // 0..1
   /** true if this point begins a new stroke (pen down) */
   s?: boolean;
+  /** colour / width index (see style.ts); only meaningful on pen-down points */
+  c?: number;
+  w?: number;
 }
 
 export interface Stroke {
   points: Point[];
 }
 
-// ---- Submitted drawings: compact [x, y, penDown] tuples ----
-/** x, y in [0,1]; third value is 1 when this point starts a new stroke. */
-export type DPoint = [number, number, number];
+// ---- Submitted drawings: compact tuples ----
+/**
+ * [x, y, penDown, colour?, width?]: x, y in [0,1]; penDown is 1 when the point
+ * starts a new stroke. Only pen-down points carry the style (indices into
+ * style.ts); later points of the stroke inherit it.
+ */
+export type DPoint = [number, number, number, number?, number?];
 
 export interface DrawingEntry {
   playerId: string;

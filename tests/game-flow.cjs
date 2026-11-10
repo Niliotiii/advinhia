@@ -37,7 +37,8 @@ class Client {
   mark() { return this.inbox.length; }
 }
 const is = (t, extra = () => true) => (m) => m.t === t && extra(m);
-const pts = (n) => Array.from({ length: n }, (_, i) => [i / n, 0.5, i === 0 ? 1 : 0]);
+// st = [colourIndex, widthIndex] puts a style on the first (pen-down) point.
+const pts = (n, st) => Array.from({ length: n }, (_, i) => (i === 0 && st ? [i / n, 0.5, 1, st[0], st[1]] : [i / n, 0.5, i === 0 ? 1 : 0]));
 
 async function main() {
   const tA = uuid(), tB = uuid(), tC = uuid();
@@ -94,9 +95,9 @@ async function main() {
   const reA0 = await A.wait(is("roundEnd"), 18000, ma);
   await B.wait(is("roundEnd"), 3000, mb);
   assert(reA0.round === 0, "roundEnd da rodada 0 (alarme do servidor)");
-  A.send({ t: "drawing", round: 0, pts: pts(30) });
+  A.send({ t: "drawing", round: 0, pts: pts(30, [3, 4]) }); // valid style: yellow, widest
   B.send({ t: "drawing", round: 0, pts: pts(25) });
-  C.send({ t: "drawing", round: 0, pts: pts(20) });
+  C.send({ t: "drawing", round: 0, pts: pts(20, [99, 2]) }); // invalid colour index
   await A.wait(is("drawingAck", (m) => m.round === 0), 3000);
   await B.wait(is("drawingAck", (m) => m.round === 0), 3000);
   await C.wait(is("drawingAck", (m) => m.round === 0), 3000);
@@ -177,7 +178,11 @@ async function main() {
   assert(resA.results.winners.length === 1 && resA.results.winners[0] === ids.B, "Bob vence, apesar da trapaça de Carol");
   assert(JSON.stringify(resB.results) === JSON.stringify(resA.results), "todos recebem o mesmo resultado");
   assert(resA.drawings.length === 8, `8 desenhos no resultado (${resA.drawings.length})`);
-  assert(resA.drawings.every((d) => d.pts.every((p) => p.length === 3 && p[0] >= 0 && p[0] <= 1)), "desenhos normalizados");
+  const first = (pid) => resA.drawings.find((d) => d.playerId === pid && d.round === 0).pts[0];
+  assert(JSON.stringify(first(ids.A)) === "[0,0.5,1,3,4]", `o estilo válido (cor/espessura) chega ao resultado: ${JSON.stringify(first(ids.A))}`);
+  assert(first(ids.C).length === 3, `estilo inválido é descartado pelo servidor: ${JSON.stringify(first(ids.C))}`);
+  assert(first(ids.B).length === 3, "desenho sem estilo continua válido (compatível com clientes antigos)");
+  assert(resA.drawings.every((d) => d.pts.every((p) => (p.length === 3 || p.length === 5) && p[0] >= 0 && p[0] <= 1 && p[1] >= 0 && p[1] <= 1)), "desenhos normalizados (3 valores, ou 5 com estilo)");
 
   console.log("[7] Jogar de novo");
   m0 = B2.mark();

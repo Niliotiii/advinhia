@@ -1,5 +1,5 @@
 // Scoring pipeline test: what the AI is shown must not depend on how the player
-// draws on screen, and the recorded vector points must score like the raw input.
+// draws on screen (brush width or colour), and the recorded vector points must score like the raw input.
 //
 //   npx vite --port 5199 --strictPort                         (terminal 1, dev server)
 //   chrome --headless=new --remote-debugging-port=9222 about:blank   (terminal 2)
@@ -20,12 +20,13 @@ const PAGE_CODE = `(async () => {
   const LADDER = [[[0.32,0.18],[0.32,0.86]], [[0.62,0.18],[0.62,0.86]], ...Array.from({length:6},(_,i)=>{const y=0.24+i*0.12;return [[0.32,y],[0.62,y]];})];
   const BOLT = [[[0.55,0.12],[0.38,0.5],[0.55,0.5],[0.4,0.88]]];
 
-  // Draw with a REAL DrawingBoard (synthetic mouse events) using a given on-screen brush.
-  function drawLive(strokes, brushPx) {
+  // Draw with a REAL DrawingBoard (synthetic mouse events). width/color are indices
+  // into shared/style.ts: widths [6,10,14,20,28]px, colours [black,red,orange,yellow,...].
+  function drawLive(strokes, widthIdx, colorIdx = 0) {
     const cv = document.createElement('canvas'); cv.width = 420; cv.height = 420;
     cv.style.cssText = 'position:fixed;left:0;top:0;width:420px;height:420px';
     document.body.appendChild(cv);
-    const board = new DrawingBoard(cv); board.setBrushSize(brushPx);
+    const board = new DrawingBoard(cv); board.setStyle({ width: widthIdx, color: colorIdx });
     const raw = []; board.setOnSegment((nx, ny, s) => raw.push([nx, ny, s ? 1 : 0]));
     const r = cv.getBoundingClientRect();
     const P = (u,v) => ({ clientX: r.left+u*r.width, clientY: r.top+v*r.height });
@@ -40,9 +41,11 @@ const PAGE_CODE = `(async () => {
 
   const out = {};
   // 1) The player's brush must not change what the AI sees.
-  out.ladder = {}; for (const b of [4, 14, 28]) out.ladder[b] = score(drawLive(LADDER, b).pts, 'ladder');
-  out.bolt = {};   for (const b of [4, 14, 28]) out.bolt[b]   = score(drawLive(BOLT, b).pts, 'lightning');
-  const L = drawLive(LADDER, 14), B = drawLive(BOLT, 14);
+  // brush 6px / 14px / 28px, and colours black / yellow (lightest) / purple
+  out.ladder = {}; for (const b of [0, 2, 4]) out.ladder['pincel ' + [6,10,14,20,28][b]] = score(drawLive(LADDER, b).pts, 'ladder');
+  out.bolt = {};   for (const b of [0, 2, 4]) out.bolt['pincel ' + [6,10,14,20,28][b]]   = score(drawLive(BOLT, b).pts, 'lightning');
+  out.ladderColor = {}; for (const c of [0, 3, 6]) out.ladderColor['cor ' + c] = score(drawLive(LADDER, 2, c).pts, 'ladder');
+  const L = drawLive(LADDER, 2), B = drawLive(BOLT, 2);
   out.ladderAsCup = score(L.pts, 'cup'); out.boltAsLadder = score(B.pts, 'ladder');
   out.points = L.pts.length;
   renderForAI(ai, L.pts); rec.reset(); out.ladderTop = rec.predict(ai, 1)[0].label; rec.reset();
@@ -55,7 +58,7 @@ const PAGE_CODE = `(async () => {
     const strokes = k % 2 ? [[[J(.55,.06),J(.12,.04)],[J(.38,.06),J(.5,.04)],[J(.55,.06),J(.5,.04)],[J(.4,.06),J(.88,.04)]]]
       : [[[J(.32,.03),.18],[J(.32,.03),.86]], [[J(.62,.03),.18],[J(.62,.03),.86]], ...Array.from({length:6},(_,i)=>[[.32,J(.24+i*.12,.03)],[.62,J(.24+i*.12,.03)]])];
     const label = k % 2 ? 'lightning' : 'ladder';
-    const thin = drawLive(strokes, 4), thick = drawLive(strokes, 28);
+    const thin = drawLive(strokes, 0, 0), thick = drawLive(strokes, 4, 3);   // thin black vs thickest yellow
     worstBrush = Math.max(worstBrush, Math.abs(score(thin.pts, label) - score(thick.pts, label)));
     worstRound = Math.max(worstRound, Math.abs(score(thin.pts, label) - score(thin.raw, label)));
   }
@@ -80,13 +83,15 @@ const PAGE_CODE = `(async () => {
   if (r.exceptionDetails) { console.error("page error:", JSON.stringify(r.exceptionDetails).slice(0, 700)); process.exit(2); }
   const o = JSON.parse(r.result.value);
   const pct = (v) => (v * 100).toFixed(1) + "%";
-  console.log("    escada com pincel 4/14/28px:", [4, 14, 28].map((b) => pct(o.ladder[b])).join(" / "), "| raio:", [4, 14, 28].map((b) => pct(o.bolt[b])).join(" / "));
+  const vals = (m) => Object.values(m).map(pct).join(" / ");
+  console.log("    escada com pincel 6/14/28px:", vals(o.ladder), "| raio:", vals(o.bolt), "| escada preto/amarelo/roxo:", vals(o.ladderColor));
   const spread = (m) => Math.max(...Object.values(m)) - Math.min(...Object.values(m));
-  assert(o.ladderTop === 'ladder', `a escada é o palpite principal da IA (${pct(o.ladder[14])} para 'escada')`);
-  assert(o.bolt[14] > 0.6, `o raio é reconhecido com folga (${pct(o.bolt[14])})`);
-  assert(spread(o.ladder) < 0.005, `a escada tem a MESMA nota com pincel 4, 14 ou 28px (variação ${(spread(o.ladder) * 100).toFixed(2)} pontos)`);
+  assert(o.ladderTop === 'ladder', `a escada é o palpite principal da IA (${pct(o.ladder['pincel 14'])} para 'escada')`);
+  assert(o.bolt['pincel 14'] > 0.6, `o raio é reconhecido com folga (${pct(o.bolt['pincel 14'])})`);
+  assert(spread(o.ladder) < 0.005, `a escada tem a MESMA nota com pincel 6, 14 ou 28px (variação ${(spread(o.ladder) * 100).toFixed(2)} pontos)`);
+  assert(spread(o.ladderColor) < 0.005, `e a MESMA nota em preto, amarelo ou roxo (variação ${(spread(o.ladderColor) * 100).toFixed(2)} pontos)`);
   assert(spread(o.bolt) < 0.005, `o raio também (variação ${(spread(o.bolt) * 100).toFixed(2)} pontos)`);
-  assert(o.worstBrush < 0.005, `40 desenhos tremidos: o pincel nunca muda a nota (pior caso ${(o.worstBrush * 100).toFixed(2)} pontos)`);
+  assert(o.worstBrush < 0.005, `40 desenhos tremidos: pincel e cor nunca mudam a nota (pior caso ${(o.worstBrush * 100).toFixed(2)} pontos)`);
   assert(o.worstRound < 0.03, `arredondar os pontos a 4 casas muda a nota no máximo ${(o.worstRound * 100).toFixed(2)} pontos (<3)`);
   assert(o.ladderAsCup < 0.05, `escada contra o conceito errado ('xícara') dá nota baixa (${pct(o.ladderAsCup)})`);
   assert(o.boltAsLadder < 0.05, `raio contra 'escada' dá nota baixa (${pct(o.boltAsLadder)})`);

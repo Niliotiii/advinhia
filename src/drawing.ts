@@ -1,15 +1,25 @@
 import type { DPoint } from "./shared/protocol";
+import { BRUSH_WIDTHS, DEFAULT_COLOR, DEFAULT_WIDTH, PALETTE } from "./shared/style";
+
+interface StrokeStyle {
+  color: string;
+  width: number;
+}
 
 /**
- * Replay a submitted drawing onto a canvas: black strokes on white, exactly
- * like DrawingBoard paints them (a dot where a stroke starts, a line between
- * consecutive points of the same stroke).
+ * Paint a list of points onto a canvas (white background): a dot where a stroke
+ * starts, a line between consecutive points of the same stroke. `styleOf` picks
+ * the colour/width for every new stroke from the optional style indices that
+ * pen-down points carry; the rest of the stroke inherits it.
  *
- * Used both to score a drawing with the AI (420px canvas, 14px brush — the
- * same conditions as the live board) and to render result thumbnails (pass a
- * proportionally smaller `lineWidth`).
+ * This is the single painter used by the live board (undo), the result
+ * thumbnails and the AI rendering, so all of them draw strokes identically.
  */
-export function renderDrawing(canvas: HTMLCanvasElement, pts: DPoint[], lineWidth: number): void {
+function paint(
+  canvas: HTMLCanvasElement,
+  pts: DPoint[],
+  styleOf: (color?: number, width?: number) => StrokeStyle,
+): void {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) return;
   const w = canvas.width;
@@ -19,21 +29,23 @@ export function renderDrawing(canvas: HTMLCanvasElement, pts: DPoint[], lineWidt
   ctx.fillRect(0, 0, w, h);
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
-  ctx.lineWidth = lineWidth;
-  ctx.strokeStyle = "#111";
-  ctx.fillStyle = "#111";
 
+  let style = styleOf();
   let px = 0;
   let py = 0;
   let havePrev = false;
-  for (const [nx, ny, penDown] of pts) {
+  for (const [nx, ny, penDown, color, width] of pts) {
     const x = nx * w;
     const y = ny * h;
     if (penDown || !havePrev) {
+      style = styleOf(color, width);
+      ctx.fillStyle = style.color;
       ctx.beginPath();
-      ctx.arc(x, y, lineWidth / 2, 0, Math.PI * 2);
+      ctx.arc(x, y, style.width / 2, 0, Math.PI * 2);
       ctx.fill();
     } else {
+      ctx.strokeStyle = style.color;
+      ctx.lineWidth = style.width;
       ctx.beginPath();
       ctx.moveTo(px, py);
       ctx.lineTo(x, y);
@@ -43,6 +55,27 @@ export function renderDrawing(canvas: HTMLCanvasElement, pts: DPoint[], lineWidt
     py = y;
     havePrev = true;
   }
+}
+
+/**
+ * Replay a drawing in black with one uniform width. Kept as a plain reference
+ * renderer (benchmarks, tests); the app itself uses renderStyled / renderForAI.
+ */
+export function renderDrawing(canvas: HTMLCanvasElement, pts: DPoint[], lineWidth: number): void {
+  paint(canvas, pts, () => ({ color: "#111", width: lineWidth }));
+}
+
+/**
+ * Replay a drawing the way the player made it: each stroke in its own colour and
+ * width. Widths scale with the canvas (420px is the reference), so the same
+ * function renders the board and the small result thumbnails.
+ */
+export function renderStyled(canvas: HTMLCanvasElement, pts: DPoint[]): void {
+  const scale = canvas.width / 420;
+  paint(canvas, pts, (color, width) => ({
+    color: PALETTE[color ?? DEFAULT_COLOR]?.hex ?? PALETTE[DEFAULT_COLOR].hex,
+    width: (BRUSH_WIDTHS[width ?? DEFAULT_WIDTH] ?? BRUSH_WIDTHS[DEFAULT_WIDTH]) * scale,
+  }));
 }
 
 /**

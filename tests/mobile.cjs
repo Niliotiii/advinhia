@@ -65,6 +65,9 @@ function rpc(ws, st, m, p = {}) { const id = st.id++; return new Promise((res, r
   await ev(`document.querySelector('input[name="mp-rounds"][value="3"]').click(); document.querySelector('input[name="mp-seconds"][value="15"]').click(); document.querySelector('#start-btn').click(); true`);
   assert(await waitFor(`!document.querySelector('#play-bar').hidden`, 8000), "partida começa no celular");
   await sleep(400);
+  const tl = await ev(`(() => { const hostR = document.querySelector('#tools').getBoundingClientRect(); const bs = [...document.querySelectorAll('#tools button')].map((b) => b.getBoundingClientRect()); return { n: bs.length, minW: Math.min(...bs.map((r) => r.width)), minH: Math.min(...bs.map((r) => r.height)), inside: bs.every((r) => r.left >= 0 && r.right <= 390), hostRight: hostR.right }; })()`);
+  assert(tl.n === 14 && tl.inside, `as ferramentas (8 cores + 5 espessuras + desfazer) cabem na tela do celular (${tl.n} botões)`);
+  assert(tl.minW >= 34 && tl.minH >= 34, `todos os botões das ferramentas têm alvo de toque ≥ 34px (menor: ${Math.round(tl.minW)}×${Math.round(tl.minH)})`);
   const b2 = await rect("#board");
   assert(b2.l >= 0 && b2.r <= 390 && b2.w > 250, `o quadro cabe na tela (${Math.round(b2.w)}px de largura)`);
   await touchStroke([[0.32, 0.18], [0.32, 0.86]]); await touchStroke([[0.62, 0.18], [0.62, 0.86]]);

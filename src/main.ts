@@ -2,9 +2,10 @@ import "./style.css";
 import { SketchRecognizer, type Prediction } from "./recognizer";
 import { DrawingBoard } from "./board";
 import { renderForAI } from "./drawing";
+import { mountTools } from "./tools";
 import { Game, type GameSnapshot, type RoundResult } from "./game";
 import {
-  BRUSH_PX,
+  BRUSH_INDEX,
   DEFAULT_SETTINGS,
   loadName,
   loadSettings,
@@ -50,6 +51,16 @@ const nameSetting = $<HTMLInputElement>("#name-setting");
 const recognizer = new SketchRecognizer();
 const board = new DrawingBoard(canvas);
 const game = new Game();
+// Colours, brush width and undo. They only change how the drawing looks.
+const tools = mountTools($("#tools"), board, {
+  onUndo: () => {
+    recognizer.reset();
+    if (!board.dirty) {
+      guessesEl.innerHTML = "";
+      renderVision();
+    }
+  },
+});
 // What the AI is shown: the board's strokes re-rendered in black with an ideal,
 // size-proportional width (the player's brush and colours are only cosmetic).
 const aiCanvas = document.createElement("canvas");
@@ -262,7 +273,7 @@ function setView(view: "menu" | "game"): void {
 function startSolo(): void {
   if (!recognizer.isReady()) return;
   game.configure(settings);
-  board.setBrushSize(BRUSH_PX[settings.brush]);
+  tools.setWidth(BRUSH_INDEX[settings.brush]);
   board.clear();
   hideOverlay();
   lastPrompt = null;

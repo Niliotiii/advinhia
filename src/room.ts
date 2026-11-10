@@ -1,7 +1,8 @@
 import "./style.css";
 import "./room.css";
 import { DrawingBoard } from "./board";
-import { renderDrawing, renderForAI } from "./drawing";
+import { renderForAI, renderStyled } from "./drawing";
+import { mountTools, type Tools } from "./tools";
 import { RoomClient, type ConnStatus } from "./net";
 import { loadSettings } from "./settings";
 import { MIN_PLAYERS } from "./shared/protocol";
@@ -75,23 +76,13 @@ const againBtn = $<HTMLButtonElement>("#again-btn");
 const againNote = $("#again-note");
 
 // ---- Constants ----
-/**
- * Brush shown to players. It is cosmetic: the AI is always given the drawing
- * re-rendered with an ideal stroke width (renderForAI), so it can't affect scores.
- */
-const GAME_BRUSH_PX = 14;
 const BOARD_PX = 420;
-/**
- * Coordinates are sent with 4 decimals (~0.04px on the 420px board). With 3
- * decimals the AI's score for the replayed drawing drifted up to ~14 points
- * from the live one on wobbly strokes; with 4 it stays within ~2 points.
- */
-const COORD_SCALE = 10000;
 const MAX_POINTS = 4000;
 const THUMB_PX = 210;
 
 // ---- State ----
 let board: DrawingBoard | null = null;
+let tools: Tools | null = null;
 let client: RoomClient | null = null;
 let recognizerPromise: Promise<SketchRecognizer> | null = null;
 
@@ -108,7 +99,6 @@ let shownRound = -2; // round currently on the board (to keep a drawing across r
 let totalRounds = 0;
 let roundEndsAt = 0;
 let nextAt = 0;
-let currentPts: DPoint[] = [];
 let myDrawings: DPoint[][] = [];
 const submitted = new Set<number>();
 const acked = new Set<number>();
@@ -116,7 +106,6 @@ let computedScores: Record<string, number[]> | null = null;
 let ticker: number | null = null;
 
 const serverNow = (): number => Date.now() + clockOffset;
-const roundCoord = (v: number): number => Math.round(v * COORD_SCALE) / COORD_SCALE;
 
 // ---- Small DOM helpers ----
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -221,33 +210,20 @@ function showPhase(p: Phase): void {
   stage.classList.toggle("stage--waiting", p === "lobby");
   boardFrame.classList.toggle("board-frame--locked", p === "between");
   // Shared warm-up in the lobby; private and time-locked while playing.
-  board?.setEnabled(p === "lobby" || (p === "drawing" && serverNow() < roundEndsAt));
+  const canDraw = p === "lobby" || (p === "drawing" && serverNow() < roundEndsAt);
+  board?.setEnabled(canDraw);
+  tools?.setEnabled(canDraw, p === "drawing"); // undo would desync the shared warm-up board
   renderHostArea();
 }
 
 // ---- Drawing rounds ----
-function record(nx: number, ny: number, isStart: boolean): void {
-  if (currentPts.length >= MAX_POINTS) {
-    board?.setEnabled(false);
-    mpNote.textContent = "Limite de traço atingido neste desenho.";
-    return;
-  }
-  const x = roundCoord(nx);
-  const y = roundCoord(ny);
-  if (!isStart) {
-    // Only exact repeats are dropped: any other filtering bends the stroke
-    // and would change the score the AI gives the replayed drawing.
-    const last = currentPts[currentPts.length - 1];
-    if (last && last[0] === x && last[1] === y) return;
-  }
-  currentPts.push([x, y, isStart ? 1 : 0]);
-}
-
 function lockAndSubmit(): void {
   board?.setEnabled(false);
+  tools?.setEnabled(false);
   submitted.add(round);
-  myDrawings[round] = currentPts.slice();
-  if (currentPts.length > 0) {
+  // Snapshot of what the board recorded (points + colour/width of each stroke).
+  myDrawings[round] = (board?.getStrokes() ?? []).map((p) => [...p] as DPoint);
+  if (myDrawings[round].length > 0) {
     client?.sendDrawing(round, myDrawings[round]);
   } else {
     mpNote.textContent = "Você não desenhou nada neste desenho.";
@@ -383,7 +359,7 @@ function renderResults(res: Results, drawings: DrawingEntry[]): void {
         const c = el("canvas", "gallery__thumb");
         c.width = THUMB_PX;
         c.height = THUMB_PX;
-        renderDrawing(c, d.pts, (GAME_BRUSH_PX * THUMB_PX) / BOARD_PX);
+        renderStyled(c, d.pts);
         c.setAttribute("aria-label", `Desenho de ${p.name}: ${r.pt}`);
         card.append(c);
       } else {
@@ -449,7 +425,6 @@ function onMessage(msg: ServerMessage): void {
       if (shownRound !== msg.round) {
         // A new concept (a reconnect during the same round keeps the drawing).
         shownRound = msg.round;
-        currentPts = [];
         board?.clear();
         mpNote.textContent = "";
       }
@@ -464,7 +439,7 @@ function onMessage(msg: ServerMessage): void {
       round = msg.round;
       nextAt = msg.nextAt;
       if (!submitted.has(round)) lockAndSubmit();
-      else if (currentPts.length > 0 && !acked.has(round)) client?.sendDrawing(round, myDrawings[round]);
+      else if (myDrawings[round]?.length > 0 && !acked.has(round)) client?.sendDrawing(round, myDrawings[round]);
       showPhase("between");
       startTicker();
       break;
@@ -490,7 +465,7 @@ function onMessage(msg: ServerMessage): void {
       break;
     case "stroke":
       if (phase === "lobby") {
-        for (const p of msg.stroke.points) board?.drawRemoteSegment(msg.from, p.x, p.y, !!p.s);
+        for (const p of msg.stroke.points) board?.drawRemoteSegment(msg.from, p.x, p.y, !!p.s, p.c, p.w);
       }
       break;
     case "clear":
@@ -514,7 +489,6 @@ function resetGame(): void {
   inGame = false;
   round = -1;
   shownRound = -2;
-  currentPts = [];
   myDrawings = [];
   submitted.clear();
   acked.clear();
@@ -557,11 +531,16 @@ function enterRoom(code: string, name: string): void {
   history.replaceState(null, "", `/room?room=${encodeURIComponent(code)}`); // a reload rejoins through the invite flow
 
   board = new DrawingBoard(canvas);
-  board.setBrushSize(GAME_BRUSH_PX);
-  board.setOnSegment((nx, ny, isStart) => {
-    if (phase === "lobby") client?.sendPoint(nx, ny, isStart);
-    else if (phase === "drawing") record(nx, ny, isStart);
+  // The board records the strokes itself; once the cap is hit it stops taking ink,
+  // so what is on screen is always what gets submitted.
+  board.setPointLimit(MAX_POINTS, () => {
+    mpNote.textContent = "Limite de traço atingido neste desenho.";
   });
+  // Only the lobby warm-up is streamed live; during the game drawings stay private.
+  board.setOnSegment((nx, ny, isStart, color, width) => {
+    if (phase === "lobby") client?.sendPoint(nx, ny, isStart, color, width);
+  });
+  tools = mountTools($("#tools"), board);
 
   client = new RoomClient(code, name, { onMessage, onStatus });
   client.connect();
@@ -682,7 +661,6 @@ clearBtn.addEventListener("click", () => {
     client?.sendClear();
   } else if (phase === "drawing" && !submitted.has(round)) {
     board?.clear();
-    currentPts = [];
     board?.setEnabled(serverNow() < roundEndsAt);
   }
 });

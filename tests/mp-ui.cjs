@@ -48,7 +48,7 @@ async function ctl(wsUrl) {
     text: (s) => ev(`document.querySelector(${q(s)}).textContent.trim()`),
     setv: (s, v) => ev(`(() => { const i = document.querySelector(${q(s)}); i.value = ${q(v)}; return true; })()`),
     waitFor: async (e, ms = 8000) => { const t = Date.now(); while (Date.now() - t < ms) { if (await ev(e)) return true; await sleep(150); } return false; },
-    ink: () => ev(`(() => { const c = document.querySelector('#board'); const d = c.getContext('2d').getImageData(0,0,c.width,c.height).data; let k = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 128) k++; return k; })()`),
+    ink: () => ev(`(() => { const c = document.querySelector('#board'); const d = c.getContext('2d').getImageData(0,0,c.width,c.height).data; let k = 0; for (let i = 0; i < d.length; i += 4) if ((d[i] + d[i+1] + d[i+2]) / 3 < 200) k++; return k; })()`),
     // Draw polylines (normalized coords) on #board with synthetic mouse events.
     draw: (strokes) => ev(`(() => { const cv = document.querySelector('#board'); const r = cv.getBoundingClientRect();
       const P = (u, v) => ({ clientX: r.left + u * r.width, clientY: r.top + v * r.height });
@@ -88,6 +88,7 @@ async function main() {
   assert(!(await B.vis("#host-panel")) && await B.vis("#guest-note"), "Bob vê 'aguardando o anfitrião'");
   assert((await A.ev(`document.querySelector('#players .player--self .player__tag')?.textContent`)) === "anfitrião", "Alice marcada como anfitriã");
   assert(!(await A.ev(`document.querySelector('#start-btn').disabled`)), "iniciar liberado com 2 jogadores");
+  assert(!(await A.ev(`document.querySelector('#tools .swatch').disabled`)) && await A.ev(`document.querySelector('#tools .tools__undo').disabled`), "lobby: cores liberadas e Desfazer desligado (o aquecimento é compartilhado)");
   await A.draw([[[0.2, 0.2], [0.8, 0.8]]]);
   assert(await B.waitFor(`(() => { const c = document.querySelector('#board'); const d = c.getContext('2d').getImageData(0,0,c.width,c.height).data; for (let i = 0; i < d.length; i += 4) if (d[i] < 128) return true; return false; })()`, 4000), "aquecimento: o traço de Alice aparece para Bob");
   await A.click("#clear-btn");
@@ -111,7 +112,18 @@ async function main() {
       assert(t2 < t1, `cronômetro regressivo (${t1}s -> ${t2}s)`);
     }
     // Private drawing: what Alice draws must NOT show up for Bob.
+    if (r === 0) {
+      assert(!(await A.ev(`document.querySelector('#tools .tools__undo').disabled`)), "durante o desenho o Desfazer está disponível");
+      await A.click('#tools .swatch[aria-label="Vermelho"]');
+    }
     await A.draw(LADDER);
+    if (r === 0) {
+      const full = await A.ink();
+      await A.click("#tools .tools__undo"); await A.click("#tools .tools__undo");
+      const less = await A.ink();
+      assert(less < full && less > 0, `Desfazer ×2 remove traços do desenho (${full}px -> ${less}px)`);
+      await A.draw(LADDER.slice(6)); // put two rungs back so the drawing is still a ladder
+    }
     if (r === 1) {
       await B.draw([[[0.2, 0.3], [0.5, 0.6], [0.8, 0.3]]]); // a stroke, then the connection drops
       const inkBefore = await B.ink();
@@ -129,6 +141,7 @@ async function main() {
     assert(await A.waitFor(`document.querySelector('#board-frame').classList.contains('board-frame--locked')`, 20000), "fim do tempo: quadro travado");
     assert(await A.waitFor(`/Desenho enviado/.test(document.querySelector('#mp-note').textContent)`, 5000), "Alice vê 'Desenho enviado'");
     if (r === 0) {
+      assert(await A.ev(`document.querySelector('#tools .tools__undo').disabled && document.querySelector('#tools .swatch').disabled`), "depois do tempo as ferramentas também travam");
       const ink = await A.ink();
       await A.draw([[[0.1, 0.1], [0.9, 0.9]]]);
       assert((await A.ink()) === ink, "depois do tempo o quadro não aceita traços");
@@ -162,7 +175,8 @@ async function main() {
   const thumbs = await A.ev(`document.querySelectorAll('.gallery__thumb').length`);
   const empties = await A.ev(`document.querySelectorAll('.gallery__empty').length`);
   assert(thumbs === 5 && empties === 1, `galeria: 5 desenhos + 1 'sem desenho' (${thumbs}+${empties})`);
-  assert(await A.ev(`[...document.querySelectorAll('.gallery__thumb')].every(c => { const d = c.getContext('2d').getImageData(0,0,c.width,c.height).data; for (let i = 0; i < d.length; i += 4) if (d[i] < 128) return true; return false; })`), "todas as miniaturas têm traço (desenhos reproduzidos)");
+  assert(await A.ev(`(() => { const cards = [...document.querySelectorAll('.gallery__card')].filter((c) => c.querySelector('.gallery__name')?.textContent === 'Você' && c.querySelector('canvas')); return cards.length === 3 && cards.every((c) => { const cv = c.querySelector('canvas'); const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; for (let i = 0; i < d.length; i += 4) if (d[i] > 180 && d[i+1] < 110 && d[i+2] < 110) return true; return false; }); })()`), "a galeria mostra os desenhos de Alice na cor vermelha que ela escolheu");
+  assert(await A.ev(`[...document.querySelectorAll('.gallery__thumb')].every(c => { const d = c.getContext('2d').getImageData(0,0,c.width,c.height).data; for (let i = 0; i < d.length; i += 4) if ((d[i] + d[i+1] + d[i+2]) / 3 < 200) return true; return false; })`), "todas as miniaturas têm traço (desenhos reproduzidos)");
   const norm = `document.querySelector('#results-table').textContent.replace(/\\(você\\)/g, '').replace(/\\s+/g, '')`;
   assert((await A.ev(norm)) === (await B.ev(norm)), "os dois veem a mesma tabela de notas");
 

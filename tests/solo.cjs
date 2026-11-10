@@ -34,28 +34,36 @@ function rpc(ws, st, m, p = {}) { const id = st.id++; return new Promise((res, r
   assert((await ev(`document.querySelector('#app').dataset.view`)) === "menu", "abre no menu");
   assert(await waitFor(`!document.querySelector('#play-solo-btn').disabled`), "o modelo carrega e libera o solo");
 
-  // Draw the same ladder in a fresh solo game with a given brush; return the AI-vision pixels + board ink.
-  async function playWithBrush(brush) {
+  // Draw the same ladder (8 strokes) on the board and read back what the AI saw.
+  const LADDER_JS = `(() => { const c = document.querySelector('#board'); const r = c.getBoundingClientRect();
+      const P = (u, v) => ({ clientX: r.left + u * r.width, clientY: r.top + v * r.height });
+      const F = (t, p, g) => g.dispatchEvent(new MouseEvent(t, { clientX: p.clientX, clientY: p.clientY, bubbles: true }));
+      const S = [[[.32,.18],[.32,.86]], [[.62,.18],[.62,.86]], ...Array.from({ length: 6 }, (_, i) => [[.32, .24 + i * .12], [.62, .24 + i * .12]])];
+      for (const s of S) { F('mousedown', P(...s[0]), c); for (let i = 1; i < s.length; i++) F('mousemove', P(...s[i]), c); F('mouseup', P(0, 0), window); } return true; })()`;
+  const READ_JS = `(() => {
+      const v = document.querySelector('#vision').getContext('2d').getImageData(0, 0, 28, 28).data;
+      let sum = 0, vis = []; for (let i = 0; i < v.length; i += 4) { vis.push(v[i]); sum += v[i]; }
+      const b = document.querySelector('#board'); const d = b.getContext('2d').getImageData(0, 0, b.width, b.height).data;
+      let ink = 0, yellow = 0; for (let i = 0; i < d.length; i += 4) { if (d[i] < 128) ink++; if (d[i] > 200 && d[i + 1] > 150 && d[i + 2] < 110) yellow++; }
+      const g = document.querySelector('#guesses .guess');
+      return { vision: vis.join(','), visionSum: sum, ink, yellow, top: g ? g.querySelector('.guess__label').textContent : '', pct: g ? g.querySelector('.guess__pct').textContent : '', guesses: document.querySelectorAll('#guesses .guess').length };
+    })()`;
+  async function drawLadderAndRead() {
+    await ev(LADDER_JS);
+    await waitFor(`document.querySelectorAll('#guesses .guess').length > 0`, 5000);
+    await sleep(1200); // let the 250ms inference loop catch up with the finished drawing
+    return ev(READ_JS);
+  }
+  async function startGameWithBrush(brush) {
     await click("#settings-toggle");
     await ev(`document.querySelector('input[name="brush"][value="${brush}"]').click(); true`);
     await click("#settings-toggle");
     await click("#play-solo-btn");
     if (!(await waitFor(`document.querySelector('#prompt').textContent !== '—'`, 5000))) throw new Error("partida não iniciou");
-    await ev(`(() => { const c = document.querySelector('#board'); const r = c.getBoundingClientRect();
-      const P = (u, v) => ({ clientX: r.left + u * r.width, clientY: r.top + v * r.height });
-      const F = (t, p, g) => g.dispatchEvent(new MouseEvent(t, { clientX: p.clientX, clientY: p.clientY, bubbles: true }));
-      const S = [[[.32,.18],[.32,.86]], [[.62,.18],[.62,.86]], ...Array.from({ length: 6 }, (_, i) => [[.32, .24 + i * .12], [.62, .24 + i * .12]])];
-      for (const s of S) { F('mousedown', P(...s[0]), c); for (let i = 1; i < s.length; i++) F('mousemove', P(...s[i]), c); F('mouseup', P(0, 0), window); } return true; })()`);
-    await waitFor(`document.querySelectorAll('#guesses .guess').length > 0`, 5000);
-    await sleep(1200); // let the 250ms inference loop catch up with the finished drawing
-    return ev(`(() => {
-      const v = document.querySelector('#vision').getContext('2d').getImageData(0, 0, 28, 28).data;
-      let sum = 0, vis = []; for (let i = 0; i < v.length; i += 4) { vis.push(v[i]); sum += v[i]; }
-      const b = document.querySelector('#board'); const d = b.getContext('2d').getImageData(0, 0, b.width, b.height).data;
-      let ink = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 128) ink++;
-      const g = document.querySelector('#guesses .guess');
-      return { vision: vis.join(','), visionSum: sum, ink, top: g.querySelector('.guess__label').textContent, pct: g.querySelector('.guess__pct').textContent };
-    })()`);
+  }
+  async function playWithBrush(brush) {
+    await startGameWithBrush(brush);
+    return drawLadderAndRead();
   }
 
   console.log("[2] Mesma escada com pincel fino e com pincel grosso");
@@ -69,6 +77,39 @@ function rpc(ws, st, m, p = {}) { const id = st.id++; return new Promise((res, r
   assert(thick.ink > thin.ink * 1.5, `o traço visível muda com o pincel (${thin.ink}px -> ${thick.ink}px)`);
   assert(thin.vision === thick.vision, "mas a entrada da IA (28x28) é IDÊNTICA pixel a pixel");
   assert(/ladder/i.test(thin.top) && /ladder/i.test(thick.top), "a escada é o palpite principal nos dois casos");
+
+  console.log("[3] Cor, espessura e desfazer pelo quadro");
+  await click("#clear-btn");
+  assert((await ev(`document.querySelectorAll('#tools .swatch').length`)) === 8 && (await ev(`document.querySelectorAll('#tools .size').length`)) === 5, "paleta com 8 cores e 5 espessuras");
+  assert((await ev(`document.querySelector('#tools .size[aria-checked="true"]').title`)) === "Espessura 4 de 5", "a espessura inicial vem da configuração (grosso = 4º)");
+  await ev(`document.querySelector('#tools .swatch[aria-label="Amarelo"]').click(); document.querySelector('#tools .size[title="Espessura 5 de 5"]').click(); true`);
+  assert((await ev(`document.querySelector('#tools .swatch[aria-checked="true"]').getAttribute('aria-label')`)) === "Amarelo", "a cor escolhida fica marcada");
+  const yellow = await drawLadderAndRead();
+  console.log(`    amarelo + espessura máxima: traço escuro=${yellow.ink}px, pixels amarelos=${yellow.yellow}px | palpite: ${yellow.top} ${yellow.pct}`);
+  assert(yellow.yellow > 5000, `o traço aparece amarelo na tela (${yellow.yellow}px)`);
+  assert(yellow.vision === thin.vision, "e a entrada da IA continua IDÊNTICA à do traço preto fino");
+
+  // Undo: one extra stroke, then undo it.
+  const before = yellow;
+  await ev(`(() => { const c = document.querySelector('#board'); const r = c.getBoundingClientRect(); const P = (u, v) => ({ clientX: r.left + u * r.width, clientY: r.top + v * r.height });
+    const F = (t, p, g) => g.dispatchEvent(new MouseEvent(t, { clientX: p.clientX, clientY: p.clientY, bubbles: true }));
+    F('mousedown', P(.1, .1), c); F('mousemove', P(.9, .9), c); F('mouseup', P(0, 0), window); return true; })()`);
+  await sleep(900);
+  const withExtra = await ev(READ_JS);
+  assert(withExtra.vision !== before.vision && withExtra.yellow > before.yellow, "um traço a mais muda o desenho e a entrada da IA");
+  await click("#tools .tools__undo");
+  await sleep(900);
+  const afterUndo = await ev(READ_JS);
+  assert(Math.abs(afterUndo.yellow - before.yellow) / before.yellow < 0.02, `desfazer remove só o último traço (${withExtra.yellow}px -> ${afterUndo.yellow}px amarelos)`);
+  assert(afterUndo.vision === before.vision, "e a IA volta a ver exatamente o desenho anterior");
+
+  // Ctrl+Z removes the remaining 8 strokes one by one, and the AI panel clears.
+  for (let i = 0; i < 8; i++) await ev(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true })); true`);
+  await sleep(600);
+  const empty = await ev(READ_JS);
+  assert(empty.yellow === 0 && empty.ink === 0, "Ctrl+Z desfaz traço a traço até o quadro ficar vazio");
+  assert(empty.guesses === 0, "sem desenho, o painel de palpites da IA é limpo");
+  assert(!(await ev(`document.querySelector('#tools .tools__undo').disabled`)) , "o botão Desfazer continua disponível durante a partida");
 
   console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);

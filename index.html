@@ -155,7 +155,7 @@
               <label class="seg__item"><input type="radio" name="brush" value="medium" /><span>Médio</span></label>
               <label class="seg__item"><input type="radio" name="brush" value="thick" /><span>Grosso</span></label>
             </div>
-            <p class="opt__help">Só muda o visual do traço. A IA sempre recebe o desenho com a espessura ideal.</p>
+            <p class="opt__help">Espessura inicial do traço. Durante a partida você troca a espessura e a cor no quadro; isso só muda o visual, a IA sempre recebe o desenho com a espessura ideal.</p>
           </fieldset>
 
           <div class="settings__foot">
@@ -183,6 +183,7 @@
           <div class="board-frame">
             <canvas id="board" width="420" height="420" aria-label="Quadro de desenho"></canvas>
           </div>
+          <div id="tools"></div>
           <div class="board-controls">
             <button id="clear-btn" class="btn btn--ghost" type="button">
               <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
