@@ -133,3 +133,21 @@ depois de `npm run build`) e, os de navegador, de um Chrome com
 
 - Botão "terminei" para encerrar um desenho antes do tempo quando todos acabarem.
 - Níveis de dificuldade (curar as 345 classes por facilidade de desenho).
+
+## Créditos e licenças
+
+- **Modelo de reconhecimento: [doodleNet](https://github.com/yining1023/doodleNet)**, de
+  [@yining1023](https://github.com/yining1023): CNN para as 345 categorias do Quick, Draw!,
+  usada aqui sem alterações (arquivos em `public/model/`, vindos de
+  `demo/DoodleClassifier_345/model`). Segundo o próprio README do doodleNet, o treino
+  se baseia no notebook *Sketcher* de [@zaidalyafeai](https://github.com/zaidalyafeai).
+  > O repositório do doodleNet **não declara uma licença**. Os pesos estão neste projeto
+  > sem uma permissão explícita de reuso; antes de divulgar amplamente ou usar de forma
+  > comercial, confirme com o autor.
+- **Dataset: [Quick, Draw!](https://github.com/googlecreativelab/quickdraw-dataset)**,
+  disponibilizado pela Google, Inc. sob a licença
+  [Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/).
+  É com ele que o doodleNet foi treinado.
+- **[TensorFlow.js](https://www.tensorflow.org/js)** executa a inferência no navegador.
+- **Cloudflare Workers e Durable Objects** hospedam o site e as salas multiplayer.
+- **Fontes** Fraunces e Inter, carregadas do Google Fonts.
